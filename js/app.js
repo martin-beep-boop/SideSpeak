@@ -1003,34 +1003,55 @@ document.addEventListener('DOMContentLoaded', () => {
     renderRightSidebarStudentList();
 
     function attemptUrlAutoLogin() {
-        const params = new URLSearchParams(window.location.search);
-        const studentIdParam = params.get('id');
+    const params = new URLSearchParams(window.location.search);
+    const studentIdParam = params.get('id');
 
-        if (!studentIdParam) return;
+    if (!studentIdParam) return;
 
-        userRole = 'student';
-        const store = getStudentsStore();
+    userRole = 'student';
+    let store = getStudentsStore();
 
-        if (store[studentIdParam]) {
-            currentStudentId = studentIdParam;
-            currentStudentName = store[studentIdParam].name;
-            
-            let hasChosenBefore = localStorage.getItem('circumlocution_avatar_chosen_' + currentStudentName);
-            selectedAvatar = localStorage.getItem('circumlocution_avatar_' + currentStudentName) || store[studentIdParam].avatar || getDiceBearUrl(currentStudentName);
-            
-            document.getElementById('welcome-student-name').innerText = currentStudentName;
-            document.getElementById('lobby-avatar-display').src = selectedAvatar;
-            document.getElementById('header-avatar-display').src = selectedAvatar;
-            document.getElementById('current-player-display').innerText = currentStudentName;
+    // IF STUDENT IS NOT IN LOCAL STORAGE, RE-CREATE THEM FROM THE URL
+    if (!store[studentIdParam]) {
+        // Extract the original student name from the URL ID format: "Name_randomString"
+        const decodedRaw = decodeURIComponent(studentIdParam);
+        const nameParts = decodedRaw.split('_');
+        
+        // Use the extracted name, or fallback to 'Student' if parsing fails
+        const extractedName = nameParts.length > 1 ? nameParts.slice(0, -1).join('_') : decodedRaw;
 
-            if (!hasChosenBefore) {
-                updateDiceBearPreview();
-                switchScreen('student-avatar-screen');
-            } else {
-                switchScreen('student-direct-login');
-            }
-        }
+        // Auto-hydrate store so local storage now remembers this student
+        store[studentIdParam] = {
+            id: studentIdParam,
+            name: extractedName,
+            identifier: 'Link User',
+            level: 'A1',
+            avatar: getDiceBearUrl(extractedName)
+        };
+
+        // Save back to local storage and sync with backend socket
+        saveStudentsStore(store, true);
     }
+
+    // Now proceed with normal auto-login
+    currentStudentId = studentIdParam;
+    currentStudentName = store[studentIdParam].name;
+    
+    let hasChosenBefore = localStorage.getItem('circumlocution_avatar_chosen_' + currentStudentName);
+    selectedAvatar = localStorage.getItem('circumlocution_avatar_' + currentStudentName) || store[studentIdParam].avatar || getDiceBearUrl(currentStudentName);
+    
+    document.getElementById('welcome-student-name').innerText = currentStudentName;
+    document.getElementById('lobby-avatar-display').src = selectedAvatar;
+    document.getElementById('header-avatar-display').src = selectedAvatar;
+    document.getElementById('current-player-display').innerText = currentStudentName;
+
+    if (!hasChosenBefore) {
+        updateDiceBearPreview();
+        switchScreen('student-avatar-screen');
+    } else {
+        switchScreen('student-direct-login');
+    }
+}
 
     // Attempt auto-login immediately if cached locally...
     attemptUrlAutoLogin();
