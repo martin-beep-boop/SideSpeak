@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Connects to hosted backend (or local server during development)
     const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000'
-        : 'https://YOUR-RENDER-BACKEND-URL.onrender.com'; // <--- Put your Render URL here when deployed
+        : 'https://sidespeak.onrender.com'; // <--- Put your Render URL here when deployed
 
     const socket = io(BACKEND_URL);
 
