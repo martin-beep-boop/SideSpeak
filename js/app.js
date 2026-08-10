@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('studentListUpdated', (store) => {
         saveStudentsStore(store, false); // Update locally without re-emitting
+        attemptUrlAutoLogin(); // Try logging in as soon as server syncs student data!
     });
 
     const faceShapes = [
@@ -1001,12 +1002,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderRightSidebarStudentList();
 
-    const params = new URLSearchParams(window.location.search);
-    const studentIdParam = params.get('id');
+    function attemptUrlAutoLogin() {
+        const params = new URLSearchParams(window.location.search);
+        const studentIdParam = params.get('id');
 
-    if (studentIdParam) {
+        if (!studentIdParam) return;
+
         userRole = 'student';
         const store = getStudentsStore();
+
         if (store[studentIdParam]) {
             currentStudentId = studentIdParam;
             currentStudentName = store[studentIdParam].name;
@@ -1025,10 +1029,14 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 switchScreen('student-direct-login');
             }
-        } else {
-            alert('Student profile not found via this link.');
         }
     }
+
+    // Attempt auto-login immediately if cached locally...
+    attemptUrlAutoLogin();
+
+    // ...and attempt again after 1.5 seconds in case Socket.io is still connecting on initial load
+    setTimeout(attemptUrlAutoLogin, 1500);
 });
 
 document.getElementById('tutor-login-btn').addEventListener('click', () => {
