@@ -15,8 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
         handleGameStateSync(state);
     });
 
-    socket.on('studentListUpdated', (store) => {
-        saveStudentsStore(store, false); // Update locally without re-emitting
+    socket.on('studentListUpdated', (serverStore) => {
+        // Merge server store with local storage instead of blindly overwriting, preventing data loss on refresh
+        const localStore = getStudentsStore();
+        const mergedStore = { ...serverStore, ...localStore };
+        saveStudentsStore(mergedStore, false); 
         attemptUrlAutoLogin(); // Try logging in as soon as server syncs student data!
     });
 

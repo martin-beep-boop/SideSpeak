@@ -15,18 +15,22 @@
 }
 
 body {
-    font-family: 'Fredoka', 'Outfit', sans-serif;
-    background: linear-gradient(120deg, #ff7eb3, #9c27b0, #ff758c, #e91e63);
-    background-size: 200% 200%;
-    animation: playfulGradientBg 15s ease infinite;
-    color: #2d3748;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-    font-size: clamp(16px, 1.4vw, 19px);
-}
-
+      background-color: var(--color-bg);
+      background-image: 
+        radial-gradient(circle at center, rgba(251, 191, 36, 0.15) 0%, rgba(3, 7, 18, 0.45) 100%),
+        url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1920&q=80');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      color: #f8fafc;
+      font-family: var(--font-body);
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    
 @keyframes playfulGradientBg {
     0% { background-position: 0% 0%; }
     50% { background-position: 100% 100%; }
