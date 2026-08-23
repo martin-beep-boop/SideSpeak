@@ -217,13 +217,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.createNewStudent = createNewStudent;
 
-    // Attach event listener directly to the student creation action button to fix non-responsive clicks
     const createStudentBtn = document.getElementById('create-student-btn');
     if (createStudentBtn) {
         createStudentBtn.addEventListener('click', createNewStudent);
     }
 
-    // Attach tutor login button listener inside DOMContentLoaded
     const tutorLoginBtn = document.getElementById('tutor-login-btn');
     if (tutorLoginBtn) {
         tutorLoginBtn.addEventListener('click', () => {
@@ -750,7 +748,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         switchScreen('student-selection-screen');
-        localStorage.setItem('circumlocution_gamestate', JSON.stringify({ status: 'selecting', word: null }));
+        const stateObj = { status: 'selecting', word: null, tier: null, stars: null, baseline: 50, bonusMax: 100, points: 150, timeLeft: 120 };
+        localStorage.setItem('circumlocution_gamestate', JSON.stringify(stateObj));
+        syncGameStateToSupabase(stateObj);
     }
     window.loadWordChoices = loadWordChoices;
 
@@ -778,7 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 clearInterval(countdownInterval);
                 overlay.classList.remove('active');
                 
-                localStorage.setItem('circumlocution_gamestate', JSON.stringify({
+                const activeState = {
                     status: 'playing',
                     word: currentWord,
                     tier: currentTier,
@@ -787,7 +787,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     bonusMax: currentBonusMax,
                     points: currentLivePoints,
                     timeLeft: 120
-                }));
+                };
+                localStorage.setItem('circumlocution_gamestate', JSON.stringify(activeState));
+                syncGameStateToSupabase(activeState);
 
                 startActiveRound();
             }
@@ -802,7 +804,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentBonusMax = 100;
         currentLivePoints = currentBaseline + currentBonusMax;
 
-        localStorage.setItem('circumlocution_gamestate', JSON.stringify({
+        const selState = {
             status: 'selecting', 
             word: currentWord,
             tier: currentTier,
@@ -811,7 +813,10 @@ document.addEventListener('DOMContentLoaded', () => {
             bonusMax: currentBonusMax,
             points: currentLivePoints,
             timeLeft: 120
-        }));
+        };
+
+        localStorage.setItem('circumlocution_gamestate', JSON.stringify(selState));
+        syncGameStateToSupabase(selState);
 
         runGeoGuessrCountdown(currentWord);
     }
@@ -853,6 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.points = currentLivePoints;
             state.timeLeft = timeLeft;
             localStorage.setItem('circumlocution_gamestate', JSON.stringify(state));
+            syncGameStateToSupabase(state);
 
             if (timeLeft <= 0) {
                 clearInterval(timerInterval);
@@ -897,15 +903,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const isRecord = await saveHighScore(totalEarned);
             const personalBestVal = await getPersonalBest();
             
-            let currentState = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
-            currentState.status = 'summary';
-            currentState.success = true;
-            currentState.earned = totalEarned;
-            currentState.baselineEarned = finalBaselineEarned;
-            currentState.bonusEarned = finalBonusEarned;
-            currentState.tier = currentTier;
-            currentState.isNewRecord = isRecord;
+            let currentState = {
+                status: 'summary',
+                success: true,
+                earned: totalEarned,
+                baselineEarned: finalBaselineEarned,
+                bonusEarned: finalBonusEarned,
+                tier: currentTier,
+                isNewRecord: isRecord,
+                word: currentWord,
+                stars: currentStars,
+                baseline: currentBaseline,
+                bonusMax: currentBonusMax,
+                points: currentLivePoints,
+                timeLeft: timeLeft
+            };
             localStorage.setItem('circumlocution_gamestate', JSON.stringify(currentState));
+            syncGameStateToSupabase(currentState);
 
             if (isRecord) {
                 mainCardBox.classList.add('personal-best-card-effect');
@@ -932,6 +946,25 @@ document.addEventListener('DOMContentLoaded', () => {
             summaryText.innerText = `Round ended without a correct guess or time ran out.`;
             summaryText.style.color = '#f43f5e';
             const personalBestVal = await getPersonalBest();
+
+            let currentState = {
+                status: 'summary',
+                success: false,
+                earned: 0,
+                baselineEarned: 0,
+                bonusEarned: 0,
+                tier: currentTier,
+                isNewRecord: false,
+                word: currentWord,
+                stars: currentStars,
+                baseline: currentBaseline,
+                bonusMax: currentBonusMax,
+                points: currentLivePoints,
+                timeLeft: timeLeft
+            };
+            localStorage.setItem('circumlocution_gamestate', JSON.stringify(currentState));
+            syncGameStateToSupabase(currentState);
+
             celebrationSlot.innerHTML = `
                 <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
                     Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
@@ -949,69 +982,69 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initTutorSession() {
-    // Initial fetch to populate UI immediately
-    supabase.from('game_states').select('*').eq('id', 'active_session').single().then(({ data }) => {
-        if (data) updateTutorDashboardUI(data);
-    });
+        supabase.from('game_states').select('*').eq('id', 'active_session').single().then(({ data }) => {
+            if (data) updateTutorDashboardUI(data);
+        });
 
-    // Listen to live changes via Supabase Realtime WebSockets
-    supabase
-        .channel('public:game_states')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'game_states', filter: 'id=eq.active_session' }, (payload) => {
-            if (payload.new) {
-                updateTutorDashboardUI(payload.new);
-            }
-        })
-        .subscribe();
-}
-
-function updateTutorDashboardUI(state) {
-    if (userRole !== 'tutor') return;
-
-    const statusTextEl = document.getElementById('tutor-status-text');
-    const activeControlsEl = document.getElementById('tutor-active-game-controls');
-    const summaryControlsEl = document.getElementById('tutor-summary-controls');
-    const recordBanner = document.getElementById('tutor-record-banner');
-
-    if (!statusTextEl) return;
-
-    if (state.status === 'playing') {
-        statusTextEl.style.display = 'none';
-        activeControlsEl.style.display = 'block';
-        summaryControlsEl.style.display = 'none';
-        
-        document.getElementById('tutor-score-display').innerText = `Current Score Value: ${state.points} (Time: ${state.time_left}s)`;
-        
-        currentLivePoints = state.points;
-        currentBaseline = state.baseline || 50;
-        currentWord = state.word;
-        currentTier = state.tier;
-        currentStars = state.stars || '';
-
-        const badgeDiv = document.getElementById('tutor-badge');
-        badgeDiv.innerHTML = `<span class="badge badge-${(state.tier || 'very easy').toLowerCase().replace(/\s+/g, '-')}">${currentStars} ${state.tier || 'Very Easy'} Level</span>`;
-    } else if (state.status === 'selecting') {
-        statusTextEl.style.display = 'block';
-        if (state.word) {
-            statusTextEl.innerHTML = `Student selected a word: <strong style="color: #f8fafc; font-size: 20px;">${state.word}</strong><br><small style="color: #94a3b8;">Get ready! Round starting...</small>`;
-        } else {
-            statusTextEl.innerText = 'Student is choosing a word...';
-        }
-        activeControlsEl.style.display = 'none';
-        summaryControlsEl.style.display = 'none';
-    } else if (state.status === 'summary') {
-        statusTextEl.style.display = 'block';
-        statusTextEl.innerText = state.success ? `Round Won! Earned ${state.earned} pts` : `Round Ended / Passed`;
-        activeControlsEl.style.display = 'none';
-        summaryControlsEl.style.display = 'block';
-        recordBanner.style.display = state.is_new_record ? 'block' : 'none';
-    } else {
-        statusTextEl.style.display = 'block';
-        statusTextEl.innerText = 'No student has arrived yet.';
-        activeControlsEl.style.display = 'none';
-        summaryControlsEl.style.display = 'none';
+        supabase
+            .channel('public:game_states')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'game_states', filter: 'id=eq.active_session' }, (payload) => {
+                if (payload.new) {
+                    updateTutorDashboardUI(payload.new);
+                }
+            })
+            .subscribe();
     }
-}
+
+    function updateTutorDashboardUI(state) {
+        if (userRole !== 'tutor') return;
+
+        const statusTextEl = document.getElementById('tutor-status-text');
+        const activeControlsEl = document.getElementById('tutor-active-game-controls');
+        const summaryControlsEl = document.getElementById('tutor-summary-controls');
+        const recordBanner = document.getElementById('tutor-record-banner');
+
+        if (!statusTextEl) return;
+
+        if (state.status === 'playing') {
+            statusTextEl.style.display = 'none';
+            activeControlsEl.style.display = 'block';
+            summaryControlsEl.style.display = 'none';
+            
+            document.getElementById('tutor-score-display').innerText = `Current Score Value: ${state.points} (Time: ${state.time_left}s)`;
+            
+            currentLivePoints = state.points;
+            currentBaseline = state.baseline || 50;
+            currentWord = state.word;
+            currentTier = state.tier;
+            currentStars = state.stars || '';
+
+            const badgeDiv = document.getElementById('tutor-badge');
+            badgeDiv.innerHTML = `<span class="badge badge-${(state.tier || 'very easy').toLowerCase().replace(/\s+/g, '-')}">${currentStars} ${state.tier || 'Very Easy'} Level</span>`;
+        } else if (state.status === 'selecting') {
+            statusTextEl.style.display = 'block';
+            if (state.word) {
+                statusTextEl.innerHTML = `Student selected a word: <strong style="color: #f8fafc; font-size: 20px;">${state.word}</strong><br><small style="color: #94a3b8;">Get ready! Round starting...</small>`;
+            } else {
+                statusTextEl.innerText = 'Student is choosing a word...';
+            }
+            activeControlsEl.style.display = 'none';
+            summaryControlsEl.style.display = 'none';
+        } else if (state.status === 'summary') {
+            statusTextEl.style.display = 'block';
+            statusTextEl.innerText = state.success ? `Round Won! Earned ${state.earned} pts` : `Round Ended / Passed`;
+            activeControlsEl.style.display = 'none';
+            summaryControlsEl.style.display = 'block';
+            if (recordBanner) {
+                recordBanner.style.display = state.is_new_record ? 'block' : 'none';
+            }
+        } else {
+            statusTextEl.style.display = 'block';
+            statusTextEl.innerText = 'No student has arrived yet.';
+            activeControlsEl.style.display = 'none';
+            summaryControlsEl.style.display = 'none';
+        }
+    }
 
     function tutorApplyPenalty() {
         let state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
@@ -1019,6 +1052,7 @@ function updateTutorDashboardUI(state) {
             state.points = Math.max(0, state.points - 10);
             currentLivePoints = state.points;
             localStorage.setItem('circumlocution_gamestate', JSON.stringify(state));
+            syncGameStateToSupabase(state);
         }
     }
     window.tutorApplyPenalty = tutorApplyPenalty;
@@ -1043,10 +1077,18 @@ function updateTutorDashboardUI(state) {
                 baselineEarned: finalBaseline,
                 bonusEarned: finalBonus,
                 tier: state.tier,
-                isNewRecord: isRecord
+                isNewRecord: isRecord,
+                word: state.word,
+                stars: state.stars,
+                baseline: state.baseline,
+                bonusMax: state.bonusMax,
+                points: state.points,
+                timeLeft: state.timeLeft
             };
 
             localStorage.setItem('circumlocution_gamestate', JSON.stringify(newState));
+            syncGameStateToSupabase(newState);
+
             if (userRole === 'student') {
                 currentLivePoints = state.points;
                 currentBaseline = state.baseline || 50;
@@ -1248,7 +1290,7 @@ function triggerModalParticleBurst() {
 
 async function syncGameStateToSupabase(stateObj) {
     try {
-        await supabase.from('game_states').upsert({
+        await window.supabase.from('game_states').upsert({
             id: 'active_session',
             status: stateObj.status,
             word: stateObj.word || null,
