@@ -205,6 +205,19 @@ document.addEventListener('DOMContentLoaded', () => {
 async function handleIncomingGameState(state) {
     if (userRole !== 'student') return;
 
+    if (state.student_id && !currentStudentId) {
+        currentStudentId = state.student_id;
+    }
+
+    // If round just finished successfully, save the high score right here on the student client
+    let isRecord = false;
+    if (state.status === 'summary' && state.success) {
+        if (state.word) {
+            await markWordAsCompleted(state.word);
+        }
+        isRecord = await saveHighScore(state.earned);
+    }
+
     localStorage.setItem('circumlocution_gamestate', JSON.stringify({
         status: state.status,
         word: state.word,
@@ -1201,11 +1214,7 @@ async function initTutorSession() {
         const finalBonus = success ? Math.max(0, currentLivePoints - currentBaseline) : 0;
         const finalEarned = finalBaseline + finalBonus;
         
-        let isRecord = false;
-        if (success && currentWord) {
-            await markWordAsCompleted(currentWord);
-            isRecord = await saveHighScore(finalEarned);
-        }
+        // Remove saveHighScore call here so it doesn't run on the tutor side with blank IDs
 
         const newState = {
             status: 'summary',
@@ -1214,13 +1223,14 @@ async function initTutorSession() {
             baselineEarned: finalBaseline,
             bonusEarned: finalBonus,
             tier: currentTier,
-            isNewRecord: isRecord,
+            isNewRecord: false, // Will be computed on student side
             word: currentWord,
             stars: currentStars,
             baseline: currentBaseline,
             bonusMax: currentBonusMax,
             points: currentLivePoints,
-            timeLeft: timeLeft
+            timeLeft: timeLeft,
+            studentId: currentStudentId // Pass student ID through state sync
         };
 
         localStorage.setItem('circumlocution_gamestate', JSON.stringify(newState));
@@ -1418,6 +1428,7 @@ async function syncGameStateToSupabase(stateObj) {
             baseline_earned: stateObj.baselineEarned || 0,
             bonus_earned: stateObj.bonusEarned || 0,
             is_new_record: stateObj.isNewRecord || false,
+            student_id: currentStudentId || stateObj.studentId || null,
             updated_at: new Date()
         });
     } catch (err) {
