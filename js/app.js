@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPABASE_URL = 'https://rqukjzrvuiglzogfvlyo.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_Gew9IZGDBe1auui9YpkC6g_jzce27c4';
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    window.supabaseClient = supabase; // Expose globally for helper functions
 
     const faceShapes = [
         { id: 'circle', label: 'Circle' },
@@ -982,28 +983,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 async function initTutorSession() {
-        const { data, error } = await supabase.from('game_states').select('*').eq('id', 'active_session').single();
-        if (data) {
-            updateTutorDashboardUI(data);
-        } else {
-            await supabase.from('game_states').upsert({
-                id: 'active_session',
-                status: 'waiting',
-                points: 150,
-                time_left: 120,
-                baseline: 50
-            });
-        }
-
-        supabase
-            .channel('public:game_states')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'game_states' }, (payload) => {
-                if (payload.new && payload.new.id === 'active_session') {
-                    updateTutorDashboardUI(payload.new);
-                }
-            })
-            .subscribe();
+    const { data, error } = await supabase.from('game_states').select('*').eq('id', 'active_session').single();
+    if (data) {
+        updateTutorDashboardUI(data);
+    } else {
+        await supabase.from('game_states').upsert({
+            id: 'active_session',
+            status: 'waiting',
+            points: 150,
+            time_left: 120,
+            baseline: 50
+        });
     }
+
+    supabase
+        .channel('tutor_game_states_channel')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'game_states' }, (payload) => {
+            if (payload.new && payload.new.id === 'active_session') {
+                updateTutorDashboardUI(payload.new);
+            }
+        })
+        .subscribe();
+}
 
     function updateTutorDashboardUI(state) {
         if (userRole !== 'tutor') return;
@@ -1297,7 +1298,7 @@ function triggerModalParticleBurst() {
 
 async function syncGameStateToSupabase(stateObj) {
     try {
-        await window.supabase.from('game_states').upsert({
+        await window.supabaseClient.from('game_states').upsert({
             id: 'active_session',
             status: stateObj.status,
             word: stateObj.word || null,
