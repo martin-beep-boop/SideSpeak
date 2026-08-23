@@ -184,6 +184,108 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.loginManualStudent = loginManualStudent;
 
+    async function initStudentSession() {
+    // Fetch the active session state immediately upon joining
+    const { data } = await supabase.from('game_states').select('*').eq('id', 'active_session').single();
+    if (data) {
+        handleIncomingGameState(data);
+    }
+
+    // Subscribe to live database changes from the tutor
+    supabase
+        .channel('student_game_states_channel')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'game_states' }, (payload) => {
+            if (payload.new && payload.new.id === 'active_session') {
+                handleIncomingGameState(payload.new);
+            }
+        })
+        .subscribe();
+}
+
+function handleIncomingGameState(state) {
+    if (userRole !== 'student') return;
+
+    // Save remote state to local storage so other functions stay synced
+    localStorage.setItem('circumlocution_gamestate', JSON.stringify({
+        status: state.status,
+        word: state.word,
+        tier: state.tier,
+        stars: state.stars,
+        baseline: state.baseline,
+        bonusMax: state.bonus_max,
+        points: state.points,
+        timeLeft: state.time_left,
+        success: state.success,
+        earned: state.earned,
+        baselineEarned: state.baseline_earned,
+        bonusEarned: state.bonus_earned,
+        isNewRecord: state.is_new_record
+    }));
+
+    const gameScreen = document.getElementById('student-game-screen');
+
+    // If tutor triggers summary/end round, force student to summary screen
+    if (state.status === 'summary' && gameScreen && gameScreen.classList.contains('active')) {
+        if (typeof timerInterval !== 'undefined' && timerInterval) {
+            clearInterval(timerInterval);
+        }
+        
+        currentBaseline = state.baseline_earned || 50;
+        currentTier = state.tier || 'Very Easy';
+        const earned = state.success ? state.earned : 0;
+        
+        const headerScoreEl = document.getElementById('final-earned-score-header');
+        const celebrationSlot = document.getElementById('summary-celebration-slot');
+        const mainCardBox = document.getElementById('main-container-box');
+        
+        if (headerScoreEl) headerScoreEl.innerText = `${earned} pts`;
+        
+        const legendBasePts = document.getElementById('legend-base-pts');
+        const legendBonusPts = document.getElementById('legend-bonus-pts');
+        const barSegmentBaseline = document.getElementById('bar-segment-baseline');
+        const barSegmentBonus = document.getElementById('bar-segment-bonus');
+
+        if (legendBasePts) legendBasePts.innerText = `${state.baseline_earned || 0} pts`;
+        if (legendBonusPts) legendBonusPts.innerText = `+${state.bonus_earned || 0} pts`;
+
+        if (barSegmentBaseline) barSegmentBaseline.style.width = '0%';
+        if (barSegmentBonus) barSegmentBonus.style.width = '0%';
+        if (celebrationSlot) celebrationSlot.innerHTML = '';
+        if (mainCardBox) mainCardBox.classList.remove('personal-best-card-effect');
+
+        const summaryText = document.getElementById('summary-result-text');
+        if (summaryText) {
+            if (state.success) {
+                summaryText.innerText = `Great job! Your tutor successfully guessed the word.`;
+                summaryText.style.color = '#34d399';
+            } else {
+                summaryText.innerText = `Round ended without a correct guess or time ran out.`;
+                summaryText.style.color = '#f43f5e';
+            }
+        }
+
+        getPersonalBest().then(personalBestVal => {
+            if (celebrationSlot) {
+                celebrationSlot.innerHTML = `
+                    <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
+                        Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
+                    </div>
+                `;
+            }
+        });
+
+        switchScreen('student-summary-screen');
+
+        setTimeout(() => {
+            const totalMaxScale = 300;
+            const baselinePct = Math.max(0, Math.min(100, ((state.baseline_earned || 0) / totalMaxScale) * 100));
+            const bonusPct = Math.max(0, Math.min(100, ((state.bonus_earned || 0) / totalMaxScale) * 100));
+            if (barSegmentBaseline) barSegmentBaseline.style.width = `${baselinePct}%`;
+            if (barSegmentBonus) barSegmentBonus.style.width = `${bonusPct}%`;
+        }, 150);
+    }
+}
+
     async function createNewStudent() {
         const nameInput = document.getElementById('new-student-name').value.trim();
         const identifierInput = document.getElementById('new-student-identifier').value.trim();
@@ -1135,6 +1237,9 @@ async function initTutorSession() {
                 document.getElementById('lobby-avatar-display').src = selectedAvatar;
                 document.getElementById('header-avatar-display').src = selectedAvatar;
                 document.getElementById('current-player-display').innerText = currentStudentName;
+
+                // Initialize real-time sync for student view
+                initStudentSession();
 
                 if (!hasChosenBefore) {
                     updateDiceBearPreview();
