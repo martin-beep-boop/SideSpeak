@@ -202,10 +202,9 @@ document.addEventListener('DOMContentLoaded', () => {
         .subscribe();
 }
 
-function handleIncomingGameState(state) {
+async function handleIncomingGameState(state) {
     if (userRole !== 'student') return;
 
-    // Save remote state to local storage so other functions stay synced
     localStorage.setItem('circumlocution_gamestate', JSON.stringify({
         status: state.status,
         word: state.word,
@@ -224,7 +223,6 @@ function handleIncomingGameState(state) {
 
     const gameScreen = document.getElementById('student-game-screen');
 
-    // If tutor triggers summary/end round, force student to summary screen
     if (state.status === 'summary' && gameScreen && gameScreen.classList.contains('active')) {
         if (typeof timerInterval !== 'undefined' && timerInterval) {
             clearInterval(timerInterval);
@@ -264,7 +262,25 @@ function handleIncomingGameState(state) {
             }
         }
 
-        getPersonalBest().then(personalBestVal => {
+        // Await the fetch properly so it displays the correct record
+        const personalBestVal = await getPersonalBest();
+        
+        if (state.is_new_record) {
+            if (mainCardBox) mainCardBox.classList.add('personal-best-card-effect');
+            triggerParticleBurst();
+            
+            if (celebrationSlot) {
+                celebrationSlot.innerHTML = `
+                    <div class="celebration-banner">
+                        <div class="trophy-icon">&#127942;</div>
+                        <div>
+                            <strong style="color: #fbbf24; display: block; font-size: 17px;">New Personal Best Record Unlocked!</strong>
+                            <span style="font-size: 14px; color: #fde68a;">You crushed your previous high score!</span>
+                        </div>
+                    </div>
+                `;
+            }
+        } else {
             if (celebrationSlot) {
                 celebrationSlot.innerHTML = `
                     <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
@@ -272,7 +288,7 @@ function handleIncomingGameState(state) {
                     </div>
                 `;
             }
-        });
+        }
 
         switchScreen('student-summary-screen');
 
@@ -1001,76 +1017,54 @@ function handleIncomingGameState(state) {
 
         switchScreen('student-summary-screen');
 
+        let isRecord = false;
         if (success) {
             summaryText.innerText = `Great job! Your tutor successfully guessed the word.`;
             summaryText.style.color = '#34d399';
             
             await markWordAsCompleted(currentWord);
-            const isRecord = await saveHighScore(totalEarned);
-            const personalBestVal = await getPersonalBest();
-            
-            let currentState = {
-                status: 'summary',
-                success: true,
-                earned: totalEarned,
-                baselineEarned: finalBaselineEarned,
-                bonusEarned: finalBonusEarned,
-                tier: currentTier,
-                isNewRecord: isRecord,
-                word: currentWord,
-                stars: currentStars,
-                baseline: currentBaseline,
-                bonusMax: currentBonusMax,
-                points: currentLivePoints,
-                timeLeft: timeLeft
-            };
-            localStorage.setItem('circumlocution_gamestate', JSON.stringify(currentState));
-            syncGameStateToSupabase(currentState);
-
-            if (isRecord) {
-                mainCardBox.classList.add('personal-best-card-effect');
-                triggerParticleBurst();
-                openHighScoreModal(totalEarned);
-                
-                celebrationSlot.innerHTML = `
-                    <div class="celebration-banner">
-                        <div class="trophy-icon">&#127942;</div>
-                        <div>
-                            <strong style="color: #fbbf24; display: block; font-size: 17px;">New Personal Best Record Unlocked!</strong>
-                            <span style="font-size: 14px; color: #fde68a;">You crushed your previous high score!</span>
-                        </div>
-                    </div>
-                `;
-            } else {
-                celebrationSlot.innerHTML = `
-                    <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
-                        Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
-                    </div>
-                `;
-            }
+            isRecord = await saveHighScore(totalEarned);
         } else {
             summaryText.innerText = `Round ended without a correct guess or time ran out.`;
             summaryText.style.color = '#f43f5e';
-            const personalBestVal = await getPersonalBest();
+        }
 
-            let currentState = {
-                status: 'summary',
-                success: false,
-                earned: 0,
-                baselineEarned: 0,
-                bonusEarned: 0,
-                tier: currentTier,
-                isNewRecord: false,
-                word: currentWord,
-                stars: currentStars,
-                baseline: currentBaseline,
-                bonusMax: currentBonusMax,
-                points: currentLivePoints,
-                timeLeft: timeLeft
-            };
-            localStorage.setItem('circumlocution_gamestate', JSON.stringify(currentState));
-            syncGameStateToSupabase(currentState);
+        const personalBestVal = await getPersonalBest();
 
+        let currentState = {
+            status: 'summary',
+            success: success,
+            earned: totalEarned,
+            baselineEarned: finalBaselineEarned,
+            bonusEarned: finalBonusEarned,
+            tier: currentTier,
+            isNewRecord: isRecord,
+            word: currentWord,
+            stars: currentStars,
+            baseline: currentBaseline,
+            bonusMax: currentBonusMax,
+            points: currentLivePoints,
+            timeLeft: timeLeft
+        };
+        
+        localStorage.setItem('circumlocution_gamestate', JSON.stringify(currentState));
+        syncGameStateToSupabase(currentState);
+
+        if (success && isRecord) {
+            mainCardBox.classList.add('personal-best-card-effect');
+            triggerParticleBurst();
+            openHighScoreModal(totalEarned);
+            
+            celebrationSlot.innerHTML = `
+                <div class="celebration-banner">
+                    <div class="trophy-icon">&#127942;</div>
+                    <div>
+                        <strong style="color: #fbbf24; display: block; font-size: 17px;">New Personal Best Record Unlocked!</strong>
+                        <span style="font-size: 14px; color: #fde68a;">You crushed your previous high score!</span>
+                    </div>
+                </div>
+            `;
+        } else {
             celebrationSlot.innerHTML = `
                 <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
                     Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
