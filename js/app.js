@@ -1040,9 +1040,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             statusTextEl.style.display = 'block';
-            statusTextEl.innerText = 'No student has arrived yet.';
-            activeControlsEl.style.display = 'none';
-            summaryControlsEl.style.display = 'none';
+            statusTextEl.innerText = 'Waiting for student action...';
         }
     }
 
