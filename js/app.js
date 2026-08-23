@@ -927,7 +927,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initTutorSession() {
-    renderAllStudentsLists(); // Load once upon session start
+    // Removed renderAllStudentsLists() from here to stop infinite re-rendering
 
     setInterval(() => {
         if (userRole !== 'tutor') return;
