@@ -223,6 +223,22 @@ document.addEventListener('DOMContentLoaded', () => {
         createStudentBtn.addEventListener('click', createNewStudent);
     }
 
+    // Attach tutor login button listener inside DOMContentLoaded
+    const tutorLoginBtn = document.getElementById('tutor-login-btn');
+    if (tutorLoginBtn) {
+        tutorLoginBtn.addEventListener('click', () => {
+            const passwordInput = document.getElementById('tutor-password-input').value;
+            const correctPassword = 'Codice2127!';
+
+            if (passwordInput === correctPassword) {
+                document.getElementById('login-error-msg').style.display = 'none';
+                selectPortalRole('tutor'); 
+            } else {
+                document.getElementById('login-error-msg').style.display = 'block';
+            }
+        });
+    }
+
     async function renderStudentList() {
         const container = document.getElementById('tutor-students-container');
         if (!container) return;
@@ -1162,18 +1178,6 @@ function updateTutorDashboardUI(state) {
             }
         }
     }, 300);
-});
-
-document.getElementById('tutor-login-btn').addEventListener('click', () => {
-    const passwordInput = document.getElementById('tutor-password-input').value;
-    const correctPassword = 'Codice2127!';
-
-    if (passwordInput === correctPassword) {
-        document.getElementById('login-error-msg').style.display = 'none';
-        selectPortalRole('tutor'); 
-    } else {
-        document.getElementById('login-error-msg').style.display = 'block';
-    }
 });
 
 function playCountdownBeep(isFinal = false) {
