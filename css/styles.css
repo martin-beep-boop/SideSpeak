@@ -1,6 +1,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:ital,wght@0,300..900;1,300..900&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap');
 
+:root {
+    --font-body: 'Outfit', sans-serif;
+    --font-heading: 'Fredoka', sans-serif;
+    --color-bg: #030712;
+}
+
         html, body {
             width: 100%;
             height: 100%;
@@ -175,14 +181,12 @@ body {
             border-radius: 20px;
             cursor: pointer;
             font-size: clamp(17px, 1.4vw, 21px);
-            font-family: 'Fredoka', sans-serif;
-    letter-spacing: 0.5px;
+            font-family: var(--font-heading);
+            letter-spacing: 0.5px;
             font-weight: 700;
             width: 100%;
             transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
             box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-            letter-spacing: 0.4px;
-            font-family: 'Outfit', sans-serif;
         }
         button:hover {
             transform: translateY(-3px) scale(1.01);
@@ -246,6 +250,7 @@ body {
             text-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
             position: relative;
             z-index: 2;
+            font-family: var(--font-heading);
         }
 
         /* Subdued Metadata Text */
@@ -256,6 +261,7 @@ body {
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
             position: relative;
             z-index: 2;
+            font-family: var(--font-body);
         }
 
 button[onclick="loadWordChoices()"]:hover {
@@ -325,7 +331,7 @@ button[onclick="loadWordChoices()"]:hover {
             border-radius: 18px;
             border: 2px solid rgba(255, 255, 255, 0.12);
             font-size: 18px;
-            font-family: 'Outfit', sans-serif;
+            font-family: var(--font-body);
             box-sizing: border-box;
             background: rgba(15, 23, 42, 0.7);
             color: #f8fafc;
@@ -356,7 +362,7 @@ button[onclick="loadWordChoices()"]:hover {
             justify-content: center;
             transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
             color: #f8fafc;
-            font-family: 'Outfit', sans-serif;
+            font-family: var(--font-body);
             font-weight: 700;
             font-size: 17px;
             box-shadow: none;
@@ -640,17 +646,17 @@ button[onclick="loadWordChoices()"]:hover {
             margin-top: 0;
             margin-bottom: 12px;
             color: #ffffff;
-            font-family: 'Fredoka', sans-serif;
-    letter-spacing: 0.5px;
+            font-family: var(--font-heading);
+            letter-spacing: -0.5px;
             font-size: clamp(28px, 3.2vw, 38px);
             font-weight: 800;
-            letter-spacing: -0.5px;
         }
         p {
             color: #94a3b8;
             font-size: clamp(16px, 1.4vw, 19px);
             line-height: 1.6;
             margin: 10px 0;
+            font-family: var(--font-body);
         }
 
         /* Redesigned Refresh Token Secondary Button */
@@ -674,6 +680,7 @@ button[onclick="loadWordChoices()"]:hover {
             transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
             position: relative;
             overflow: hidden;
+            font-family: var(--font-heading);
         }
 
         .discard-words-wide-btn:hover {
@@ -731,6 +738,7 @@ button[onclick="loadWordChoices()"]:hover {
             font-weight: 700;
             color: #cbd5e1;
             margin-bottom: 12px;
+            font-family: var(--font-body);
         }
         .unified-track {
             background: rgba(2, 6, 23, 0.85);
@@ -776,6 +784,7 @@ button[onclick="loadWordChoices()"]:hover {
             font-size: 15px;
             color: #94a3b8;
             font-weight: 600;
+            font-family: var(--font-body);
         }
         .legend-item {
             display: flex;
@@ -859,8 +868,7 @@ button[onclick="loadWordChoices()"]:hover {
             font-size: 54px;
             font-weight: 900;
             background: linear-gradient(135deg, #f8fafc, #94a3b8);
-            font-family: 'Fredoka', sans-serif;
-    letter-spacing: 0.5px;
+            font-family: var(--font-heading);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             letter-spacing: -0.5px;
@@ -868,13 +876,13 @@ button[onclick="loadWordChoices()"]:hover {
             line-height: 1.1;
         }
         .game-logo-sub {
-    font-size: 18px;
-    font-weight: 700;
-    color: #818cf8;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    font-family: 'Fredoka', sans-serif; /* Add this line */
-}
+            font-size: 18px;
+            font-weight: 700;
+            color: #818cf8;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-family: var(--font-heading);
+        }
 
         .avatar-hover-wrapper {
             position: relative;
@@ -918,6 +926,7 @@ button[onclick="loadWordChoices()"]:hover {
             pointer-events: none;
             transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+            font-family: var(--font-body);
         }
         .avatar-hover-wrapper:hover .avatar-hover-badge {
             opacity: 1;
@@ -931,29 +940,29 @@ button[onclick="loadWordChoices()"]:hover {
 }
 
         .roundish-play-btn {
-    background: linear-gradient(135deg, #bf00ff, #ca2859, #4338ca);
-    background-size: 200% 200%;
-    animation: glossyButtonShift 4s ease infinite;
-    color: #ffffff;
-    font-family: 'Fredoka', sans-serif;
-    letter-spacing: 0.5px;
-    border: 3px solid rgba(255, 255, 255, 0.6);
-    padding: 24px 60px;
-    margin: 28px auto 0 auto;
-    border-radius: 50px;
-    cursor: pointer;
-    font-size: 26px;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 18px;
-    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    box-shadow: 0 12px 35px rgba(121, 40, 202, 0.5), inset 0 3px 6px rgba(255, 255, 255, 0.4);
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    position: relative;
-    overflow: hidden;
-}
+            background: linear-gradient(135deg, #bf00ff, #ca2859, #4338ca);
+            background-size: 200% 200%;
+            animation: glossyButtonShift 4s ease infinite;
+            color: #ffffff;
+            font-family: var(--font-heading);
+            letter-spacing: 0.5px;
+            border: 3px solid rgba(255, 255, 255, 0.6);
+            padding: 24px 60px;
+            margin: 28px auto 0 auto;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 26px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 12px 35px rgba(121, 40, 202, 0.5), inset 0 3px 6px rgba(255, 255, 255, 0.4);
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
 
 .roundish-play-btn::after {
     content: '';
@@ -1065,6 +1074,7 @@ button[onclick="loadWordChoices()"]:hover {
             margin-bottom: 24px;
             text-align: center;
             animation: fadeInDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            font-family: var(--font-heading);
         }
 
         .geoguessr-number {
@@ -1074,6 +1084,7 @@ button[onclick="loadWordChoices()"]:hover {
             text-shadow: 0 0 50px rgba(99, 102, 241, 0.8), 0 0 100px rgba(99, 102, 241, 0.4);
             animation: zoomInNum 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
             line-height: 1;
+            font-family: var(--font-heading);
         }
 
         @keyframes zoomInNum {

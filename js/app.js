@@ -1,5 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
 
+    const SUPABASE_URL = 'https://rqukjzrvuiglzogfvlyo.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_Gew9IZGDBe1auui9YpkC6g_jzce27c4';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
     const faceShapes = [
         { id: 'circle', label: 'Circle' },
         { id: 'squircle', label: 'Squircle' },
@@ -93,19 +97,52 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.switchScreen = switchScreen;
 
-    function getStudentsStore() {
-        const store = localStorage.getItem('circumlocution_students');
-        return store ? JSON.parse(store) : {};
+    async function getStudentsStore() {
+        try {
+            const { data, error } = await supabase.from('students').select('*');
+            if (error) throw error;
+            const store = {};
+            if (data) {
+                data.forEach(item => {
+                    store[item.id] = {
+                        name: item.name,
+                        identifier: item.identifier,
+                        id: item.id,
+                        avatar: item.avatar,
+                        level: item.level || 'A1',
+                        completedWords: item.completed_words || []
+                    };
+                });
+            }
+            return store;
+        } catch (err) {
+            console.error('Error fetching students from Supabase:', err);
+            return {};
+        }
     }
 
-    function saveStudentsStore(store) {
-        localStorage.setItem('circumlocution_students', JSON.stringify(store));
-        renderAllStudentsLists();
+    async function saveStudentsStore(store) {
+        try {
+            const records = Object.values(store).map(student => ({
+                id: student.id,
+                name: student.name,
+                identifier: student.identifier,
+                avatar: student.avatar,
+                level: student.level,
+                completed_words: student.completedWords
+            }));
+
+            const { error } = await supabase.from('students').upsert(records);
+            if (error) throw error;
+            renderAllStudentsLists();
+        } catch (err) {
+            console.error('Error saving students to Supabase:', err);
+        }
     }
 
-    function renderAllStudentsLists() {
-        renderStudentList();
-        renderRightSidebarStudentList();
+    async function renderAllStudentsLists() {
+        await renderStudentList();
+        await renderRightSidebarStudentList();
     }
 
     function selectPortalRole(role) {
@@ -120,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.selectPortalRole = selectPortalRole;
 
-    function loginManualStudent() {
+    async function loginManualStudent() {
         const input = document.getElementById('manual-student-name').value.trim();
         if (!input) {
             alert('Please enter your name.');
@@ -145,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.loginManualStudent = loginManualStudent;
 
-    function createNewStudent() {
+    async function createNewStudent() {
         const nameInput = document.getElementById('new-student-name').value.trim();
         const identifierInput = document.getElementById('new-student-identifier').value.trim();
         
@@ -161,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const randomString = Math.random().toString(36).substring(2, 9);
         const uniqueId = encodeURIComponent(nameInput) + '_' + randomString;
         
-        const store = getStudentsStore();
+        const store = await getStudentsStore();
         const persistedAvatar = localStorage.getItem('circumlocution_avatar_' + nameInput) || getDiceBearUrl(nameInput);
         
         store[uniqueId] = { 
@@ -173,18 +210,18 @@ document.addEventListener('DOMContentLoaded', () => {
             completedWords: []
         };
         
-        saveStudentsStore(store);
+        await saveStudentsStore(store);
 
         document.getElementById('new-student-name').value = '';
         document.getElementById('new-student-identifier').value = '';
     }
     window.createNewStudent = createNewStudent;
 
-    function renderStudentList() {
+    async function renderStudentList() {
         const container = document.getElementById('tutor-students-container');
         if (!container) return;
         container.innerHTML = '';
-        const store = getStudentsStore();
+        const store = await getStudentsStore();
         const keys = Object.keys(store);
 
         if (keys.length === 0) {
@@ -228,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderRightSidebarStudentList() {
+    async function renderRightSidebarStudentList() {
         const container = document.getElementById('right-sidebar-students-list');
         if (!container) return;
         
@@ -237,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         container.innerHTML = '';
-        const store = getStudentsStore();
+        const store = await getStudentsStore();
         const keys = Object.keys(store);
 
         if (keys.length === 0) {
@@ -294,12 +331,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.closeRemoveModal = closeRemoveModal;
 
-    function executeRemoveStudent() {
+    async function executeRemoveStudent() {
         if (!pendingRemovalId) return;
-        const store = getStudentsStore();
-        delete store[pendingRemovalId];
-        saveStudentsStore(store);
-        closeRemoveModal();
+        try {
+            const { error } = await supabase.from('students').delete().eq('id', pendingRemovalId);
+            if (error) throw error;
+            closeRemoveModal();
+            renderAllStudentsLists();
+        } catch (err) {
+            console.error('Error removing student from Supabase:', err);
+        }
     }
     window.executeRemoveStudent = executeRemoveStudent;
 
@@ -429,26 +470,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.randomizeAvatar = randomizeAvatar;
 
-    function saveDiceBearAvatarAndProceed() {
+    async function saveDiceBearAvatarAndProceed() {
         selectedAvatar = getDiceBearUrl(currentStudentName, selectedFace, selectedEyes, selectedMouth, selectedBgColor, selectedFaceColor);
 
         if (currentStudentName) {
             localStorage.setItem('circumlocution_avatar_' + currentStudentName, selectedAvatar);
             localStorage.setItem('circumlocution_avatar_chosen_' + currentStudentName, 'true');
         }
-        const store = getStudentsStore();
+        const store = await getStudentsStore();
         if (currentStudentId && store[currentStudentId]) {
             store[currentStudentId].avatar = selectedAvatar;
-            saveStudentsStore(store);
+            await saveStudentsStore(store);
         } else {
-            // Find student by name if created via manual login
             const foundId = Object.keys(store).find(k => store[k].name === currentStudentName);
             if (foundId) {
                 currentStudentId = foundId;
                 store[foundId].avatar = selectedAvatar;
-                saveStudentsStore(store);
+                await saveStudentsStore(store);
             } else {
-                renderRightSidebarStudentList();
+                await renderRightSidebarStudentList();
             }
         }
         
@@ -490,19 +530,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.openAvatarChanger = openAvatarChanger;
 
-    function getHighScoreStore() {
-        const store = localStorage.getItem('circumlocution_highscores');
-        return store ? JSON.parse(store) : {};
+    async function getHighScoreStore() {
+        try {
+            const { data, error } = await supabase.from('highscores').select('*');
+            if (error) throw error;
+            const store = {};
+            if (data) {
+                data.forEach(item => {
+                    store[item.student_key] = { highestScore: item.highest_score };
+                });
+            }
+            return store;
+        } catch (err) {
+            console.error('Error fetching high scores from Supabase:', err);
+            return {};
+        }
     }
 
-    function getPersonalBest() {
-        const store = getHighScoreStore();
+    async function getPersonalBest() {
+        const store = await getHighScoreStore();
         const lookupKey = currentStudentId || currentStudentName;
         return (store[lookupKey] && store[lookupKey].highestScore) ? store[lookupKey].highestScore : 0;
     }
 
-    function saveHighScore(score) {
-        const store = getHighScoreStore();
+    async function saveHighScore(score) {
+        const store = await getHighScoreStore();
         const lookupKey = currentStudentId || currentStudentName;
         if (!store[lookupKey]) {
             store[lookupKey] = { highestScore: 0 };
@@ -512,9 +564,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (score > store[lookupKey].highestScore) {
             store[lookupKey].highestScore = score;
             isNewRecord = true;
+            
+            try {
+                await supabase.from('highscores').upsert({
+                    student_key: lookupKey,
+                    highest_score: score
+                });
+            } catch (err) {
+                console.error('Error saving high score to Supabase:', err);
+            }
         }
-        
-        localStorage.setItem('circumlocution_highscores', JSON.stringify(store));
         return isNewRecord;
     }
 
@@ -538,24 +597,24 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => { box.innerHTML = ''; }, 1300);
     }
 
-    function enterStudentGame() {
+    async function enterStudentGame() {
         document.getElementById('current-player-display').innerText = currentStudentName;
         document.getElementById('header-avatar-display').src = selectedAvatar;
-        loadWordChoices();
+        await loadWordChoices();
     }
     window.enterStudentGame = enterStudentGame;
 
-    function getCurrentStudentObject() {
-        const store = getStudentsStore();
+    async function getCurrentStudentObject() {
+        const store = await getStudentsStore();
         if (currentStudentId && store[currentStudentId]) {
             return store[currentStudentId];
         }
         return Object.values(store).find(s => s.name === currentStudentName);
     }
 
-    function markWordAsCompleted(wordText) {
-        const store = getStudentsStore();
-        let studentObj = getCurrentStudentObject();
+    async function markWordAsCompleted(wordText) {
+        const store = await getStudentsStore();
+        let studentObj = await getCurrentStudentObject();
         if (studentObj) {
             if (!studentObj.completedWords) {
                 studentObj.completedWords = [];
@@ -564,18 +623,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 studentObj.completedWords.push(wordText);
             }
             store[studentObj.id] = studentObj;
-            saveStudentsStore(store);
+            await saveStudentsStore(store);
         }
     }
 
-    function getRandomWordByLevel(studentLevel = 'A1') {
+    async function getRandomWordByLevel(studentLevel = 'A1') {
         const veryEasyWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'very easy');
         const easyWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'easy');
         const mediumWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'medium');
         const hardWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'hard');
         const expertWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'expert');
 
-        const studentObj = getCurrentStudentObject();
+        const studentObj = await getCurrentStudentObject();
         const completed = studentObj && studentObj.completedWords ? studentObj.completedWords : [];
 
         let pool = [];
@@ -603,15 +662,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 pool = [...wordDatabase];
         }
 
-        // Filter out completed words
         let filteredPool = pool.filter(w => !completed.includes(w.word));
 
-        // If all words in this pool are completed, fallback to entire word database minus completed
         if (filteredPool.length === 0) {
             filteredPool = wordDatabase.filter(w => !completed.includes(w.word));
         }
 
-        // If literally every single word in the database is completed, reset completed list or fallback to full database
         if (filteredPool.length === 0) {
             filteredPool = [...wordDatabase];
         }
@@ -625,34 +681,33 @@ document.addEventListener('DOMContentLoaded', () => {
         return shuffled.slice(0, count);
     }
 
-    function updateStudentLevel(studentId, newLevel) {
-        const store = getStudentsStore();
+    async function updateStudentLevel(studentId, newLevel) {
+        const store = await getStudentsStore();
         if (store[studentId]) {
             store[studentId].level = newLevel;
-            saveStudentsStore(store);
+            await saveStudentsStore(store);
         } else {
-            // Check if studentId matches by name if id format differed
             const foundKey = Object.keys(store).find(k => k === studentId || store[k].name === studentId);
             if (foundKey) {
                 store[foundKey].level = newLevel;
-                saveStudentsStore(store);
+                await saveStudentsStore(store);
             }
         }
     }
     window.updateStudentLevel = updateStudentLevel;
 
-    function loadWordChoices() {
-        document.getElementById('personal-best-display').innerText = getPersonalBest();
+    async function loadWordChoices() {
+        document.getElementById('personal-best-display').innerText = await getPersonalBest();
         
         const container = document.getElementById('word-choices-container');
         container.innerHTML = '';
         
-        const studentObj = getCurrentStudentObject();
+        const studentObj = await getCurrentStudentObject();
         const studentLevel = studentObj ? (studentObj.level || 'A1') : 'A1';
 
         const choices = [];
         while (choices.length < 3) {
-            const candidate = getRandomWordByLevel(studentLevel);
+            const candidate = await getRandomWordByLevel(studentLevel);
             if (!choices.some(c => c.word === candidate.word)) {
                 choices.push(candidate);
             }
@@ -784,7 +839,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1000);
     }
 
-    function endRound(success) {
+    async function endRound(success) {
         clearInterval(timerInterval);
         
         const summaryText = document.getElementById('summary-result-text');
@@ -816,8 +871,9 @@ document.addEventListener('DOMContentLoaded', () => {
             summaryText.innerText = `Great job! Your tutor successfully guessed the word.`;
             summaryText.style.color = '#34d399';
             
-            markWordAsCompleted(currentWord);
-            const isRecord = saveHighScore(totalEarned);
+            await markWordAsCompleted(currentWord);
+            const isRecord = await saveHighScore(totalEarned);
+            const personalBestVal = await getPersonalBest();
             
             let currentState = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
             currentState.status = 'summary';
@@ -846,16 +902,17 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 celebrationSlot.innerHTML = `
                     <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
-                        Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${getPersonalBest()} pts</span>
+                        Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
                     </div>
                 `;
             }
         } else {
             summaryText.innerText = `Round ended without a correct guess or time ran out.`;
             summaryText.style.color = '#f43f5e';
+            const personalBestVal = await getPersonalBest();
             celebrationSlot.innerHTML = `
                 <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
-                    Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${getPersonalBest()} pts</span>
+                    Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
                 </div>
             `;
         }
@@ -939,7 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.tutorApplyPenalty = tutorApplyPenalty;
 
-    function tutorEndRound(success) {
+    async function tutorEndRound(success) {
         const state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
         if (state.status === 'playing') {
             const finalBaseline = success ? (state.baseline || 50) : 0;
@@ -948,8 +1005,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             let isRecord = false;
             if (success) {
-                markWordAsCompleted(state.word);
-                isRecord = saveHighScore(finalEarned);
+                await markWordAsCompleted(state.word);
+                isRecord = await saveHighScore(finalEarned);
             }
 
             const newState = {
@@ -967,7 +1024,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentLivePoints = state.points;
                 currentBaseline = state.baseline || 50;
                 currentTier = state.tier;
-                endRound(success);
+                await endRound(success);
             }
         }
     }
@@ -980,28 +1037,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (studentIdParam) {
         userRole = 'student';
-        const store = getStudentsStore();
-        if (store[studentIdParam]) {
-            currentStudentId = studentIdParam;
-            currentStudentName = store[studentIdParam].name;
-            
-            let hasChosenBefore = localStorage.getItem('circumlocution_avatar_chosen_' + currentStudentName);
-            selectedAvatar = localStorage.getItem('circumlocution_avatar_' + currentStudentName) || store[studentIdParam].avatar || getDiceBearUrl(currentStudentName);
-            
-            document.getElementById('welcome-student-name').innerText = currentStudentName;
-            document.getElementById('lobby-avatar-display').src = selectedAvatar;
-            document.getElementById('header-avatar-display').src = selectedAvatar;
-            document.getElementById('current-player-display').innerText = currentStudentName;
+        getStudentsStore().then(store => {
+            if (store[studentIdParam]) {
+                currentStudentId = studentIdParam;
+                currentStudentName = store[studentIdParam].name;
+                
+                let hasChosenBefore = localStorage.getItem('circumlocution_avatar_chosen_' + currentStudentName);
+                selectedAvatar = localStorage.getItem('circumlocution_avatar_' + currentStudentName) || store[studentIdParam].avatar || getDiceBearUrl(currentStudentName);
+                
+                document.getElementById('welcome-student-name').innerText = currentStudentName;
+                document.getElementById('lobby-avatar-display').src = selectedAvatar;
+                document.getElementById('header-avatar-display').src = selectedAvatar;
+                document.getElementById('current-player-display').innerText = currentStudentName;
 
-            if (!hasChosenBefore) {
-                updateDiceBearPreview();
-                switchScreen('student-avatar-screen');
+                if (!hasChosenBefore) {
+                    updateDiceBearPreview();
+                    switchScreen('student-avatar-screen');
+                } else {
+                    switchScreen('student-direct-login');
+                }
             } else {
-                switchScreen('student-direct-login');
+                alert('Student profile not found via this link.');
             }
-        } else {
-            alert('Student profile not found via this link.');
-        }
+        });
     }
 
     setInterval(() => {
@@ -1044,35 +1102,39 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (state.success) {
                         summaryText.innerText = `Great job! Your tutor successfully guessed the word.`;
                         summaryText.style.color = '#34d399';
-                        const isRecord = saveHighScore(earned);
-                        if (isRecord) {
-                            mainCardBox.classList.add('personal-best-card-effect');
-                            triggerParticleBurst();
-                            openHighScoreModal(earned);
-                            celebrationSlot.innerHTML = `
-                                <div class="celebration-banner">
-                                    <div class="trophy-icon">&#127942;</div>
-                                    <div>
-                                        <strong style="color: #fbbf24; display: block; font-size: 17px;">New Personal Best Record Unlocked!</strong>
-                                        <span style="font-size: 14px; color: #fde68a;">You crushed your previous high score!</span>
+                        saveHighScore(earned).then(async isRecord => {
+                            const personalBestVal = await getPersonalBest();
+                            if (isRecord) {
+                                mainCardBox.classList.add('personal-best-card-effect');
+                                triggerParticleBurst();
+                                openHighScoreModal(earned);
+                                celebrationSlot.innerHTML = `
+                                    <div class="celebration-banner">
+                                        <div class="trophy-icon">&#127942;</div>
+                                        <div>
+                                            <strong style="color: #fbbf24; display: block; font-size: 17px;">New Personal Best Record Unlocked!</strong>
+                                            <span style="font-size: 14px; color: #fde68a;">You crushed your previous high score!</span>
+                                        </div>
                                     </div>
-                                </div>
-                            `;
-                        } else {
-                            celebrationSlot.innerHTML = `
-                                <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
-                                    Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${getPersonalBest()} pts</span>
-                                </div>
-                            `;
-                        }
+                                `;
+                            } else {
+                                celebrationSlot.innerHTML = `
+                                    <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
+                                        Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
+                                    </div>
+                                `;
+                            }
+                        });
                     } else {
                         summaryText.innerText = `Round ended without a correct guess or time ran out.`;
                         summaryText.style.color = '#f43f5e';
-                        celebrationSlot.innerHTML = `
-                            <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
-                                Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${getPersonalBest()} pts</span>
-                            </div>
-                        `;
+                        getPersonalBest().then(personalBestVal => {
+                            celebrationSlot.innerHTML = `
+                                <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
+                                    Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
+                                </div>
+                            `;
+                        });
                     }
                     switchScreen('student-summary-screen');
 
