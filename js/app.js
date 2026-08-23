@@ -1057,55 +1057,51 @@ async function initTutorSession() {
     }
 
     function tutorApplyPenalty() {
-        let state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
-        if (state.status === 'playing') {
-            state.points = Math.max(0, state.points - 10);
-            currentLivePoints = state.points;
-            localStorage.setItem('circumlocution_gamestate', JSON.stringify(state));
-            syncGameStateToSupabase(state);
-        }
+        currentLivePoints = Math.max(0, currentLivePoints - 10);
+        
+        const state = {
+            status: 'playing',
+            word: currentWord,
+            tier: currentTier,
+            stars: currentStars,
+            baseline: currentBaseline,
+            bonusMax: currentBonusMax,
+            points: currentLivePoints,
+            timeLeft: timeLeft
+        };
+        
+        syncGameStateToSupabase(state);
     }
     window.tutorApplyPenalty = tutorApplyPenalty;
 
     async function tutorEndRound(success) {
-        const state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
-        if (state.status === 'playing') {
-            const finalBaseline = success ? (state.baseline || 50) : 0;
-            const finalBonus = success ? Math.max(0, state.points - (state.baseline || 50)) : 0;
-            const finalEarned = finalBaseline + finalBonus;
-            
-            let isRecord = false;
-            if (success) {
-                await markWordAsCompleted(state.word);
-                isRecord = await saveHighScore(finalEarned);
-            }
-
-            const newState = {
-                status: 'summary',
-                success: success,
-                earned: finalEarned,
-                baselineEarned: finalBaseline,
-                bonusEarned: finalBonus,
-                tier: state.tier,
-                isNewRecord: isRecord,
-                word: state.word,
-                stars: state.stars,
-                baseline: state.baseline,
-                bonusMax: state.bonusMax,
-                points: state.points,
-                timeLeft: state.timeLeft
-            };
-
-            localStorage.setItem('circumlocution_gamestate', JSON.stringify(newState));
-            syncGameStateToSupabase(newState);
-
-            if (userRole === 'student') {
-                currentLivePoints = state.points;
-                currentBaseline = state.baseline || 50;
-                currentTier = state.tier;
-                await endRound(success);
-            }
+        const finalBaseline = success ? currentBaseline : 0;
+        const finalBonus = success ? Math.max(0, currentLivePoints - currentBaseline) : 0;
+        const finalEarned = finalBaseline + finalBonus;
+        
+        let isRecord = false;
+        if (success && currentWord) {
+            await markWordAsCompleted(currentWord);
+            isRecord = await saveHighScore(finalEarned);
         }
+
+        const newState = {
+            status: 'summary',
+            success: success,
+            earned: finalEarned,
+            baselineEarned: finalBaseline,
+            bonusEarned: finalBonus,
+            tier: currentTier,
+            isNewRecord: isRecord,
+            word: currentWord,
+            stars: currentStars,
+            baseline: currentBaseline,
+            bonusMax: currentBonusMax,
+            points: currentLivePoints,
+            timeLeft: timeLeft
+        };
+
+        syncGameStateToSupabase(newState);
     }
     window.tutorEndRound = tutorEndRound;
 
