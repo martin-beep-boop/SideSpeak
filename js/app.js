@@ -817,9 +817,11 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         localStorage.setItem('circumlocution_gamestate', JSON.stringify(selState));
-        syncGameStateToSupabase(selState);
-
-        runGeoGuessrCountdown(currentWord);
+        
+        // Immediately sync to Supabase so the tutor dashboard registers the word selection
+        syncGameStateToSupabase(selState).then(() => {
+            runGeoGuessrCountdown(currentWord);
+        });
     }
 
     function startActiveRound() {
@@ -1033,13 +1035,13 @@ async function initTutorSession() {
             badgeDiv.innerHTML = `<span class="badge badge-${(state.tier || 'very easy').toLowerCase().replace(/\s+/g, '-')}">${currentStars} ${state.tier || 'Very Easy'} Level</span>`;
         } else if (state.status === 'selecting') {
             statusTextEl.style.display = 'block';
+            activeControlsEl.style.display = 'none';
+            summaryControlsEl.style.display = 'none';
             if (state.word) {
                 statusTextEl.innerHTML = `Student selected a word: <strong style="color: #f8fafc; font-size: 20px;">${state.word}</strong><br><small style="color: #94a3b8;">Get ready! Round starting...</small>`;
             } else {
                 statusTextEl.innerText = 'Student is choosing a word...';
             }
-            activeControlsEl.style.display = 'none';
-            summaryControlsEl.style.display = 'none';
         } else if (state.status === 'summary') {
             statusTextEl.style.display = 'block';
             statusTextEl.innerText = state.success ? `Round Won! Earned ${state.earned} pts` : `Round Ended / Passed`;
