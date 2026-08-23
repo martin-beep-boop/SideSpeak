@@ -205,21 +205,25 @@ document.addEventListener('DOMContentLoaded', () => {
 async function handleIncomingGameState(state) {
     if (userRole !== 'student') return;
 
-    if (state.student_id && !currentStudentId) {
-        currentStudentId = state.student_id;
-    }
-
-    let isRecord = false;
-    if (state.status === 'summary' && state.success) {
-        if (state.word) {
-            await markWordAsCompleted(state.word);
-        }
-        isRecord = await saveHighScore(state.earned);
-    }
+    localStorage.setItem('circumlocution_gamestate', JSON.stringify({
+        status: state.status,
+        word: state.word,
+        tier: state.tier,
+        stars: state.stars,
+        baseline: state.baseline,
+        bonusMax: state.bonus_max,
+        points: state.points,
+        timeLeft: state.time_left,
+        success: state.success,
+        earned: state.earned,
+        baselineEarned: state.baseline_earned,
+        bonusEarned: state.bonus_earned,
+        isNewRecord: state.is_new_record
+    }));
 
     const gameScreen = document.getElementById('student-game-screen');
 
-    if (state.status === 'summary' && gameScreen) {
+    if (state.status === 'summary' && gameScreen && gameScreen.classList.contains('active')) {
         if (typeof timerInterval !== 'undefined' && timerInterval) {
             clearInterval(timerInterval);
         }
@@ -258,9 +262,10 @@ async function handleIncomingGameState(state) {
             }
         }
 
+        // Await the fetch properly so it displays the correct record
         const personalBestVal = await getPersonalBest();
         
-        if (state.success && isRecord) {
+        if (state.is_new_record) {
             if (mainCardBox) mainCardBox.classList.add('personal-best-card-effect');
             triggerParticleBurst();
             
@@ -691,24 +696,15 @@ async function handleIncomingGameState(state) {
     }
 
     async function saveHighScore(score) {
-        let lookupKey = currentStudentId || currentStudentName;
-        
-        // If still missing, check if we can resolve it from the student store matching the name
-        if (!lookupKey && currentStudentName) {
-            const store = await getStudentsStore();
-            const found = Object.values(store).find(s => s.name === currentStudentName);
-            if (found) {
-                lookupKey = found.id;
-            }
-        }
-
-        if (!lookupKey) {
-            console.error('Cannot save high score: No valid student ID or name found.');
-            return false;
-        }
+        const lookupKey = currentStudentId || currentStudentName;
+        if (!lookupKey) return false;
         
         const store = await getHighScoreStore();
-        let currentHighest = (store[lookupKey] && store[lookupKey].highestScore) || 0;
+        
+        let currentHighest = 0;
+        if (store[lookupKey] && typeof store[lookupKey].highestScore === 'number') {
+            currentHighest = store[lookupKey].highestScore;
+        }
         
         let isNewRecord = false;
         if (score > currentHighest) {
@@ -1162,8 +1158,6 @@ async function initTutorSession() {
             }
         } else {
             statusTextEl.style.display = 'block';
-            activeControlsEl.style.display = 'none';
-            summaryControlsEl.style.display = 'none';
             statusTextEl.innerText = 'Waiting for student action...';
         }
     }
@@ -1198,7 +1192,11 @@ async function initTutorSession() {
         const finalBonus = success ? Math.max(0, currentLivePoints - currentBaseline) : 0;
         const finalEarned = finalBaseline + finalBonus;
         
-        // Remove saveHighScore call here so it doesn't run on the tutor side with blank IDs
+        let isRecord = false;
+        if (success && currentWord) {
+            await markWordAsCompleted(currentWord);
+            isRecord = await saveHighScore(finalEarned);
+        }
 
         const newState = {
             status: 'summary',
@@ -1207,14 +1205,13 @@ async function initTutorSession() {
             baselineEarned: finalBaseline,
             bonusEarned: finalBonus,
             tier: currentTier,
-            isNewRecord: false, // Will be computed on student side
+            isNewRecord: isRecord,
             word: currentWord,
             stars: currentStars,
             baseline: currentBaseline,
             bonusMax: currentBonusMax,
             points: currentLivePoints,
-            timeLeft: timeLeft,
-            studentId: currentStudentId // Pass student ID through state sync
+            timeLeft: timeLeft
         };
 
         localStorage.setItem('circumlocution_gamestate', JSON.stringify(newState));
@@ -1226,14 +1223,14 @@ async function initTutorSession() {
 
     renderRightSidebarStudentList();
 
-const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(window.location.search);
     const studentIdParam = params.get('id');
 
     if (studentIdParam) {
         userRole = 'student';
-        currentStudentId = studentIdParam; // Set this immediately!
         getStudentsStore().then(store => {
             if (store[studentIdParam]) {
+                currentStudentId = studentIdParam;
                 currentStudentName = store[studentIdParam].name;
                 
                 let hasChosenBefore = localStorage.getItem('circumlocution_avatar_chosen_' + currentStudentName);
@@ -1412,7 +1409,6 @@ async function syncGameStateToSupabase(stateObj) {
             baseline_earned: stateObj.baselineEarned || 0,
             bonus_earned: stateObj.bonusEarned || 0,
             is_new_record: stateObj.isNewRecord || false,
-            student_id: currentStudentId || stateObj.studentId || null,
             updated_at: new Date()
         });
     } catch (err) {
