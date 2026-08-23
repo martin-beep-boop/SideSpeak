@@ -986,7 +986,6 @@ async function initTutorSession() {
         if (data) {
             updateTutorDashboardUI(data);
         } else {
-            // Force create a default row if missing
             await supabase.from('game_states').upsert({
                 id: 'active_session',
                 status: 'waiting',
