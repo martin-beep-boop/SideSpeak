@@ -1075,6 +1075,11 @@ async function initTutorSession() {
     window.tutorApplyPenalty = tutorApplyPenalty;
 
     async function tutorEndRound(success) {
+        // Clear any lingering active timer intervals
+        if (typeof timerInterval !== 'undefined' && timerInterval) {
+            clearInterval(timerInterval);
+        }
+
         const finalBaseline = success ? currentBaseline : 0;
         const finalBonus = success ? Math.max(0, currentLivePoints - currentBaseline) : 0;
         const finalEarned = finalBaseline + finalBonus;
@@ -1101,7 +1106,9 @@ async function initTutorSession() {
             timeLeft: timeLeft
         };
 
-        syncGameStateToSupabase(newState);
+        // Update local storage so student side polling respects the summary state instantly
+        localStorage.setItem('circumlocution_gamestate', JSON.stringify(newState));
+        await syncGameStateToSupabase(newState);
     }
     window.tutorEndRound = tutorEndRound;
 
@@ -1142,6 +1149,13 @@ async function initTutorSession() {
             const state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
             const gameScreen = document.getElementById('student-game-screen');
             
+            // If status is summary, make sure we hard-stop the active game loop
+            if (state.status === 'summary') {
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                }
+            }
+
             if (state.status !== lastProcessedStateStatus) {
                 lastProcessedStateStatus = state.status;
                 
