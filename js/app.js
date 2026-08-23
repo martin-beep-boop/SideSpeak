@@ -217,6 +217,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.createNewStudent = createNewStudent;
 
+    // Attach event listener directly to the student creation action button to fix non-responsive clicks
+    const createStudentBtn = document.getElementById('create-student-btn');
+    if (createStudentBtn) {
+        createStudentBtn.addEventListener('click', createNewStudent);
+    }
+
     async function renderStudentList() {
         const container = document.getElementById('tutor-students-container');
         if (!container) return;
@@ -927,8 +933,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initTutorSession() {
-    // Removed renderAllStudentsLists() from here to stop infinite re-rendering
-
     setInterval(() => {
         if (userRole !== 'tutor') return;
         const stateJSON = localStorage.getItem('circumlocution_gamestate');
