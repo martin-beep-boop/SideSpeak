@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bgColorsList = ['0369a1', '2563eb', '7c3aed', 'db2777', '059669', 'd97706', '475569'];
     const faceColorsList = ['7dd3fc', 'a5b4fc', 'c4b5fd', 'f0abfc', 'fda4af', 'fca5a5', 'fdba74', 'fcd34d', 'bef264', '6ee7b9', '5eead4', 'e2e8f0'];
 
-    let userRole = "";
+   let userRole = "";
     let currentStudentId = "";
     let currentStudentName = "";
     let selectedAvatar = "";
@@ -71,6 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let timerInterval = null;
     let timeLeft = 120;
     let lastProcessedStateStatus = "";
+    let isEndingRound = false; // Add this lock flag
 
     let selectedFace = 'squircle';
     let selectedEyes = 'pupils';
@@ -1075,7 +1076,9 @@ async function initTutorSession() {
     window.tutorApplyPenalty = tutorApplyPenalty;
 
     async function tutorEndRound(success) {
-        // Clear any lingering active timer intervals
+        if (isEndingRound) return;
+        isEndingRound = true;
+
         if (typeof timerInterval !== 'undefined' && timerInterval) {
             clearInterval(timerInterval);
         }
@@ -1106,9 +1109,10 @@ async function initTutorSession() {
             timeLeft: timeLeft
         };
 
-        // Update local storage so student side polling respects the summary state instantly
         localStorage.setItem('circumlocution_gamestate', JSON.stringify(newState));
         await syncGameStateToSupabase(newState);
+        
+        setTimeout(() => { isEndingRound = false; }, 1000);
     }
     window.tutorEndRound = tutorEndRound;
 
@@ -1145,11 +1149,10 @@ async function initTutorSession() {
     }
 
     setInterval(() => {
-        if (userRole === 'student') {
+        if (userRole === 'student' && !isEndingRound) {
             const state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
             const gameScreen = document.getElementById('student-game-screen');
             
-            // If status is summary, make sure we hard-stop the active game loop
             if (state.status === 'summary') {
                 if (timerInterval) {
                     clearInterval(timerInterval);
@@ -1159,8 +1162,8 @@ async function initTutorSession() {
             if (state.status !== lastProcessedStateStatus) {
                 lastProcessedStateStatus = state.status;
                 
-                if (state.status === 'summary' && gameScreen && !gameScreen.classList.contains('active')) {
-                    clearInterval(timerInterval);
+                if (state.status === 'summary' && gameScreen) {
+                    if (timerInterval) clearInterval(timerInterval);
                     currentBaseline = state.baselineEarned || 50;
                     currentTier = state.tier || 'Very Easy';
                     const earned = state.success ? state.earned : 0;
@@ -1169,68 +1172,41 @@ async function initTutorSession() {
                     const celebrationSlot = document.getElementById('summary-celebration-slot');
                     const mainCardBox = document.getElementById('main-container-box');
                     
-                    headerScoreEl.innerText = `${earned} pts`;
+                    if (headerScoreEl) headerScoreEl.innerText = `${earned} pts`;
                     
                     const legendBasePts = document.getElementById('legend-base-pts');
                     const legendBonusPts = document.getElementById('legend-bonus-pts');
                     const barSegmentBaseline = document.getElementById('bar-segment-baseline');
                     const barSegmentBonus = document.getElementById('bar-segment-bonus');
 
-                    legendBasePts.innerText = `${state.baselineEarned || 0} pts`;
-                    legendBonusPts.innerText = `+${state.bonusEarned || 0} pts`;
+                    if (legendBasePts) legendBasePts.innerText = `${state.baselineEarned || 0} pts`;
+                    if (legendBonusPts) legendBonusPts.innerText = `+${state.bonusEarned || 0} pts`;
 
-                    barSegmentBaseline.style.width = '0%';
-                    barSegmentBonus.style.width = '0%';
-                    celebrationSlot.innerHTML = '';
-                    mainCardBox.classList.remove('personal-best-card-effect');
+                    if (barSegmentBaseline) barSegmentBaseline.style.width = '0%';
+                    if (barSegmentBonus) barSegmentBonus.style.width = '0%';
+                    if (celebrationSlot) celebrationSlot.innerHTML = '';
+                    if (mainCardBox) mainCardBox.classList.remove('personal-best-card-effect');
 
                     const summaryText = document.getElementById('summary-result-text');
 
-                    if (state.success) {
-                        summaryText.innerText = `Great job! Your tutor successfully guessed the word.`;
-                        summaryText.style.color = '#34d399';
-                        saveHighScore(earned).then(async isRecord => {
-                            const personalBestVal = await getPersonalBest();
-                            if (isRecord) {
-                                mainCardBox.classList.add('personal-best-card-effect');
-                                triggerParticleBurst();
-                                openHighScoreModal(earned);
-                                celebrationSlot.innerHTML = `
-                                    <div class="celebration-banner">
-                                        <div class="trophy-icon">&#127942;</div>
-                                        <div>
-                                            <strong style="color: #fbbf24; display: block; font-size: 17px;">New Personal Best Record Unlocked!</strong>
-                                            <span style="font-size: 14px; color: #fde68a;">You crushed your previous high score!</span>
-                                        </div>
-                                    </div>
-                                `;
-                            } else {
-                                celebrationSlot.innerHTML = `
-                                    <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
-                                        Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
-                                    </div>
-                                `;
-                            }
-                        });
-                    } else {
-                        summaryText.innerText = `Round ended without a correct guess or time ran out.`;
-                        summaryText.style.color = '#f43f5e';
-                        getPersonalBest().then(personalBestVal => {
-                            celebrationSlot.innerHTML = `
-                                <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
-                                    Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${personalBestVal} pts</span>
-                                </div>
-                            `;
-                        });
+                    if (summaryText) {
+                        if (state.success) {
+                            summaryText.innerText = `Great job! Your tutor successfully guessed the word.`;
+                            summaryText.style.color = '#34d399';
+                        } else {
+                            summaryText.innerText = `Round ended without a correct guess or time ran out.`;
+                            summaryText.style.color = '#f43f5e';
+                        }
                     }
+                    
                     switchScreen('student-summary-screen');
 
                     setTimeout(() => {
                         const totalMaxScale = 300;
                         const baselinePct = Math.max(0, Math.min(100, ((state.baselineEarned || 0) / totalMaxScale) * 100));
                         const bonusPct = Math.max(0, Math.min(100, ((state.bonusEarned || 0) / totalMaxScale) * 100));
-                        barSegmentBaseline.style.width = `${baselinePct}%`;
-                        barSegmentBonus.style.width = `${bonusPct}%`;
+                        if (barSegmentBaseline) barSegmentBaseline.style.width = `${baselinePct}%`;
+                        if (barSegmentBonus) barSegmentBonus.style.width = `${bonusPct}%`;
                     }, 150);
                 }
             }
