@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="./css/styles.css">
     <script type="module">
   import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
-  window.createClient = createClient; // Makes it globally available to your app.js
+  window.supabase = { createClient };
 </script>
 </head>
 <body>
