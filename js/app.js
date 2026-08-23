@@ -1,28 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    // ==========================================
-    // 1. SOCKET.IO REAL-TIME CONNECTION
-    // ==========================================
-    // Connects to hosted backend (or local server during development)
-    const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://localhost:3000'
-        : 'https://sidespeak.onrender.com'; // <--- Put your Render URL here when deployed
-
-    const socket = io(BACKEND_URL);
-
-    // Dynamic Server Event Listeners
-    socket.on('gameStateUpdated', (state) => {
-        handleGameStateSync(state);
-    });
-
-    socket.on('studentListUpdated', (serverStore) => {
-        // Merge server store with local storage instead of blindly overwriting, preventing data loss on refresh
-        const localStore = getStudentsStore();
-        const mergedStore = { ...serverStore, ...localStore };
-        saveStudentsStore(mergedStore, false); 
-        attemptUrlAutoLogin(); // Try logging in as soon as server syncs student data!
-    });
-
     const faceShapes = [
         { id: 'circle', label: 'Circle' },
         { id: 'squircle', label: 'Squircle' },
@@ -88,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentLivePoints = 150;
     let timerInterval = null;
     let timeLeft = 120;
+    let lastProcessedStateStatus = "";
 
     let selectedFace = 'squircle';
     let selectedEyes = 'pupils';
@@ -120,12 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return store ? JSON.parse(store) : {};
     }
 
-    function saveStudentsStore(store, emitToServer = true) {
+    function saveStudentsStore(store) {
         localStorage.setItem('circumlocution_students', JSON.stringify(store));
         renderAllStudentsLists();
-        if (emitToServer) {
-            socket.emit('updateStudentsStore', store);
-        }
     }
 
     function renderAllStudentsLists() {
@@ -138,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (role === 'tutor') {
             switchScreen('tutor-dashboard-screen');
             renderAllStudentsLists();
+            initTutorSession();
         } else if (role === 'student') {
             document.getElementById('student-manual-login-box').style.display = 'block';
         }
@@ -192,7 +168,9 @@ document.addEventListener('DOMContentLoaded', () => {
             name: nameInput, 
             identifier: identifierInput, 
             id: uniqueId, 
-            avatar: persistedAvatar 
+            avatar: persistedAvatar,
+            level: 'A1',
+            completedWords: []
         };
         
         saveStudentsStore(store);
@@ -463,7 +441,15 @@ document.addEventListener('DOMContentLoaded', () => {
             store[currentStudentId].avatar = selectedAvatar;
             saveStudentsStore(store);
         } else {
-            renderRightSidebarStudentList();
+            // Find student by name if created via manual login
+            const foundId = Object.keys(store).find(k => store[k].name === currentStudentName);
+            if (foundId) {
+                currentStudentId = foundId;
+                store[foundId].avatar = selectedAvatar;
+                saveStudentsStore(store);
+            } else {
+                renderRightSidebarStudentList();
+            }
         }
         
         document.getElementById('welcome-student-name').innerText = currentStudentName;
@@ -559,12 +545,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.enterStudentGame = enterStudentGame;
 
+    function getCurrentStudentObject() {
+        const store = getStudentsStore();
+        if (currentStudentId && store[currentStudentId]) {
+            return store[currentStudentId];
+        }
+        return Object.values(store).find(s => s.name === currentStudentName);
+    }
+
+    function markWordAsCompleted(wordText) {
+        const store = getStudentsStore();
+        let studentObj = getCurrentStudentObject();
+        if (studentObj) {
+            if (!studentObj.completedWords) {
+                studentObj.completedWords = [];
+            }
+            if (!studentObj.completedWords.includes(wordText)) {
+                studentObj.completedWords.push(wordText);
+            }
+            store[studentObj.id] = studentObj;
+            saveStudentsStore(store);
+        }
+    }
+
     function getRandomWordByLevel(studentLevel = 'A1') {
         const veryEasyWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'very easy');
         const easyWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'easy');
         const mediumWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'medium');
         const hardWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'hard');
         const expertWords = wordDatabase.filter(w => w.tier.toLowerCase() === 'expert');
+
+        const studentObj = getCurrentStudentObject();
+        const completed = studentObj && studentObj.completedWords ? studentObj.completedWords : [];
 
         let pool = [];
         
@@ -591,8 +603,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 pool = [...wordDatabase];
         }
 
-        if (pool.length === 0) pool = [...wordDatabase];
-        return pool[Math.floor(Math.random() * pool.length)];
+        // Filter out completed words
+        let filteredPool = pool.filter(w => !completed.includes(w.word));
+
+        // If all words in this pool are completed, fallback to entire word database minus completed
+        if (filteredPool.length === 0) {
+            filteredPool = wordDatabase.filter(w => !completed.includes(w.word));
+        }
+
+        // If literally every single word in the database is completed, reset completed list or fallback to full database
+        if (filteredPool.length === 0) {
+            filteredPool = [...wordDatabase];
+        }
+
+        return filteredPool[Math.floor(Math.random() * filteredPool.length)];
     }
 
     function getRandomSubset(arr, weight) {
@@ -606,6 +630,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (store[studentId]) {
             store[studentId].level = newLevel;
             saveStudentsStore(store);
+        } else {
+            // Check if studentId matches by name if id format differed
+            const foundKey = Object.keys(store).find(k => k === studentId || store[k].name === studentId);
+            if (foundKey) {
+                store[foundKey].level = newLevel;
+                saveStudentsStore(store);
+            }
         }
     }
     window.updateStudentLevel = updateStudentLevel;
@@ -616,9 +647,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const container = document.getElementById('word-choices-container');
         container.innerHTML = '';
         
-        const store = getStudentsStore();
-        const currentStudent = Object.values(store).find(s => s.name === currentStudentName);
-        const studentLevel = currentStudent ? (currentStudent.level || 'A1') : 'A1';
+        const studentObj = getCurrentStudentObject();
+        const studentLevel = studentObj ? (studentObj.level || 'A1') : 'A1';
 
         const choices = [];
         while (choices.length < 3) {
@@ -630,7 +660,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         choices.forEach(item => {
             const btn = document.createElement('button');
-            const tierLower = item.tier.toLowerCase();
+            const tierLower = item.tier.toLowerCase().replace(/\s+/g, '-');
             const totalMax = item.baseline + 100;
             btn.className = `word-choice-btn diff-${tierLower}`;
             btn.innerHTML = `
@@ -643,7 +673,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         switchScreen('student-selection-screen');
-        socket.emit('updateGameState', { status: 'selecting', word: null });
+        localStorage.setItem('circumlocution_gamestate', JSON.stringify({ status: 'selecting', word: null }));
     }
     window.loadWordChoices = loadWordChoices;
 
@@ -671,7 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 clearInterval(countdownInterval);
                 overlay.classList.remove('active');
                 
-                socket.emit('updateGameState', {
+                localStorage.setItem('circumlocution_gamestate', JSON.stringify({
                     status: 'playing',
                     word: currentWord,
                     tier: currentTier,
@@ -680,7 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     bonusMax: currentBonusMax,
                     points: currentLivePoints,
                     timeLeft: 120
-                });
+                }));
 
                 startActiveRound();
             }
@@ -695,7 +725,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentBonusMax = 100;
         currentLivePoints = currentBaseline + currentBonusMax;
 
-        socket.emit('updateGameState', {
+        localStorage.setItem('circumlocution_gamestate', JSON.stringify({
             status: 'selecting', 
             word: currentWord,
             tier: currentTier,
@@ -704,7 +734,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bonusMax: currentBonusMax,
             points: currentLivePoints,
             timeLeft: 120
-        });
+        }));
 
         runGeoGuessrCountdown(currentWord);
     }
@@ -713,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('game-word-target').innerText = currentWord;
         
         const badgeDiv = document.getElementById('student-active-badge');
-        badgeDiv.innerHTML = `<span class="badge badge-${currentTier.toLowerCase()}">${currentStars} ${currentTier} Level</span>`;
+        badgeDiv.innerHTML = `<span class="badge badge-${currentTier.toLowerCase().replace(/\s+/g, '-')}">${currentStars} ${currentTier} Level</span>`;
 
         timeLeft = 120;
         document.getElementById('timer-display').innerText = timeLeft + 's';
@@ -727,8 +757,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         switchScreen('student-game-screen');
 
-        if (timerInterval) clearInterval(timerInterval);
-
         timerInterval = setInterval(() => {
             timeLeft--;
             document.getElementById('timer-display').innerText = timeLeft + 's';
@@ -736,18 +764,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const percentRemaining = (timeLeft / 120) * 100;
             timeBarFill.style.width = `${percentRemaining}%`;
 
+            let state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
+            if (state.status !== 'playing') {
+                clearInterval(timerInterval);
+                return;
+            }
+
             let currentBonus = Math.max(0, Math.floor(currentBonusMax * (Math.log(1 + timeLeft) / Math.log(121))));
             currentLivePoints = currentBaseline + currentBonus;
 
-            socket.emit('updateGameState', {
-                status: 'playing',
-                word: currentWord,
-                tier: currentTier,
-                stars: currentStars,
-                baseline: currentBaseline,
-                points: currentLivePoints,
-                timeLeft: timeLeft
-            });
+            state.points = currentLivePoints;
+            state.timeLeft = timeLeft;
+            localStorage.setItem('circumlocution_gamestate', JSON.stringify(state));
 
             if (timeLeft <= 0) {
                 clearInterval(timerInterval);
@@ -788,17 +816,18 @@ document.addEventListener('DOMContentLoaded', () => {
             summaryText.innerText = `Great job! Your tutor successfully guessed the word.`;
             summaryText.style.color = '#34d399';
             
+            markWordAsCompleted(currentWord);
             const isRecord = saveHighScore(totalEarned);
             
-            socket.emit('updateGameState', {
-                status: 'summary',
-                success: true,
-                earned: totalEarned,
-                baselineEarned: finalBaselineEarned,
-                bonusEarned: finalBonusEarned,
-                tier: currentTier,
-                isNewRecord: isRecord
-            });
+            let currentState = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
+            currentState.status = 'summary';
+            currentState.success = true;
+            currentState.earned = totalEarned;
+            currentState.baselineEarned = finalBaselineEarned;
+            currentState.bonusEarned = finalBonusEarned;
+            currentState.tier = currentTier;
+            currentState.isNewRecord = isRecord;
+            localStorage.setItem('circumlocution_gamestate', JSON.stringify(currentState));
 
             if (isRecord) {
                 mainCardBox.classList.add('personal-best-card-effect');
@@ -824,17 +853,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             summaryText.innerText = `Round ended without a correct guess or time ran out.`;
             summaryText.style.color = '#f43f5e';
-            
-            socket.emit('updateGameState', {
-                status: 'summary',
-                success: false,
-                earned: 0,
-                baselineEarned: 0,
-                bonusEarned: 0,
-                tier: currentTier,
-                isNewRecord: false
-            });
-
             celebrationSlot.innerHTML = `
                 <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
                     Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${getPersonalBest()} pts</span>
@@ -851,14 +869,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 150);
     }
 
-    // ==========================================
-    // 2. BACKEND REAL-TIME EVENT ROUTER
-    // ==========================================
-    function handleGameStateSync(state) {
-        if (!state) return;
-
-        // --- TUTOR SIDE UPDATES ---
-        if (userRole === 'tutor') {
+    function initTutorSession() {
+        setInterval(() => {
+            if (userRole !== 'tutor') return;
+            const stateJSON = localStorage.getItem('circumlocution_gamestate');
+            const state = stateJSON ? JSON.parse(stateJSON) : {};
+            
             const statusTextEl = document.getElementById('tutor-status-text');
             const activeControlsEl = document.getElementById('tutor-active-game-controls');
             const summaryControlsEl = document.getElementById('tutor-summary-controls');
@@ -880,7 +896,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentStars = state.stars || '';
 
                 const badgeDiv = document.getElementById('tutor-badge');
-                badgeDiv.innerHTML = `<span class="badge badge-${(state.tier || 'easy').toLowerCase()}">${currentStars} ${state.tier || 'Easy'} Level</span>`;
+                badgeDiv.innerHTML = `<span class="badge badge-${(state.tier || 'very easy').toLowerCase().replace(/\s+/g, '-')}">${currentStars} ${state.tier || 'Very Easy'} Level</span>`;
             } else if (state.status === 'selecting') {
                 statusTextEl.style.display = 'block';
                 
@@ -910,157 +926,171 @@ document.addEventListener('DOMContentLoaded', () => {
                 activeControlsEl.style.display = 'none';
                 summaryControlsEl.style.display = 'none';
             }
+        }, 500);
+    }
+
+    function tutorApplyPenalty() {
+        let state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
+        if (state.status === 'playing') {
+            state.points = Math.max(0, state.points - 10);
+            currentLivePoints = state.points;
+            localStorage.setItem('circumlocution_gamestate', JSON.stringify(state));
         }
+    }
+    window.tutorApplyPenalty = tutorApplyPenalty;
 
-        // --- STUDENT SIDE UPDATES ---
+    function tutorEndRound(success) {
+        const state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
+        if (state.status === 'playing') {
+            const finalBaseline = success ? (state.baseline || 50) : 0;
+            const finalBonus = success ? Math.max(0, state.points - (state.baseline || 50)) : 0;
+            const finalEarned = finalBaseline + finalBonus;
+            
+            let isRecord = false;
+            if (success) {
+                markWordAsCompleted(state.word);
+                isRecord = saveHighScore(finalEarned);
+            }
+
+            const newState = {
+                status: 'summary',
+                success: success,
+                earned: finalEarned,
+                baselineEarned: finalBaseline,
+                bonusEarned: finalBonus,
+                tier: state.tier,
+                isNewRecord: isRecord
+            };
+
+            localStorage.setItem('circumlocution_gamestate', JSON.stringify(newState));
+            if (userRole === 'student') {
+                currentLivePoints = state.points;
+                currentBaseline = state.baseline || 50;
+                currentTier = state.tier;
+                endRound(success);
+            }
+        }
+    }
+    window.tutorEndRound = tutorEndRound;
+
+    renderRightSidebarStudentList();
+
+    const params = new URLSearchParams(window.location.search);
+    const studentIdParam = params.get('id');
+
+    if (studentIdParam) {
+        userRole = 'student';
+        const store = getStudentsStore();
+        if (store[studentIdParam]) {
+            currentStudentId = studentIdParam;
+            currentStudentName = store[studentIdParam].name;
+            
+            let hasChosenBefore = localStorage.getItem('circumlocution_avatar_chosen_' + currentStudentName);
+            selectedAvatar = localStorage.getItem('circumlocution_avatar_' + currentStudentName) || store[studentIdParam].avatar || getDiceBearUrl(currentStudentName);
+            
+            document.getElementById('welcome-student-name').innerText = currentStudentName;
+            document.getElementById('lobby-avatar-display').src = selectedAvatar;
+            document.getElementById('header-avatar-display').src = selectedAvatar;
+            document.getElementById('current-player-display').innerText = currentStudentName;
+
+            if (!hasChosenBefore) {
+                updateDiceBearPreview();
+                switchScreen('student-avatar-screen');
+            } else {
+                switchScreen('student-direct-login');
+            }
+        } else {
+            alert('Student profile not found via this link.');
+        }
+    }
+
+    setInterval(() => {
+        renderRightSidebarStudentList();
+
         if (userRole === 'student') {
+            const state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
             const gameScreen = document.getElementById('student-game-screen');
-
-            if (state.status === 'summary' && gameScreen && gameScreen.classList.contains('active')) {
-                clearInterval(timerInterval);
-                currentBaseline = state.baselineEarned || 50;
-                currentTier = state.tier || 'Easy';
-                const earned = state.success ? state.earned : 0;
+            
+            if (state.status !== lastProcessedStateStatus) {
+                lastProcessedStateStatus = state.status;
                 
-                const headerScoreEl = document.getElementById('final-earned-score-header');
-                const celebrationSlot = document.getElementById('summary-celebration-slot');
-                const mainCardBox = document.getElementById('main-container-box');
-                
-                headerScoreEl.innerText = `${earned} pts`;
-                
-                const legendBasePts = document.getElementById('legend-base-pts');
-                const legendBonusPts = document.getElementById('legend-bonus-pts');
-                const barSegmentBaseline = document.getElementById('bar-segment-baseline');
-                const barSegmentBonus = document.getElementById('bar-segment-bonus');
+                if (state.status === 'summary' && gameScreen && !gameScreen.classList.contains('active')) {
+                    clearInterval(timerInterval);
+                    currentBaseline = state.baselineEarned || 50;
+                    currentTier = state.tier || 'Very Easy';
+                    const earned = state.success ? state.earned : 0;
+                    
+                    const headerScoreEl = document.getElementById('final-earned-score-header');
+                    const celebrationSlot = document.getElementById('summary-celebration-slot');
+                    const mainCardBox = document.getElementById('main-container-box');
+                    
+                    headerScoreEl.innerText = `${earned} pts`;
+                    
+                    const legendBasePts = document.getElementById('legend-base-pts');
+                    const legendBonusPts = document.getElementById('legend-bonus-pts');
+                    const barSegmentBaseline = document.getElementById('bar-segment-baseline');
+                    const barSegmentBonus = document.getElementById('bar-segment-bonus');
 
-                legendBasePts.innerText = `${state.baselineEarned || 0} pts`;
-                legendBonusPts.innerText = `+${state.bonusEarned || 0} pts`;
+                    legendBasePts.innerText = `${state.baselineEarned || 0} pts`;
+                    legendBonusPts.innerText = `+${state.bonusEarned || 0} pts`;
 
-                barSegmentBaseline.style.width = '0%';
-                barSegmentBonus.style.width = '0%';
-                celebrationSlot.innerHTML = '';
-                mainCardBox.classList.remove('personal-best-card-effect');
+                    barSegmentBaseline.style.width = '0%';
+                    barSegmentBonus.style.width = '0%';
+                    celebrationSlot.innerHTML = '';
+                    mainCardBox.classList.remove('personal-best-card-effect');
 
-                const summaryText = document.getElementById('summary-result-text');
+                    const summaryText = document.getElementById('summary-result-text');
 
-                if (state.success) {
-                    summaryText.innerText = `Great job! Your tutor successfully guessed the word.`;
-                    summaryText.style.color = '#34d399';
-                    const isRecord = saveHighScore(earned);
-                    if (isRecord) {
-                        mainCardBox.classList.add('personal-best-card-effect');
-                        triggerParticleBurst();
-                        openHighScoreModal(earned);
-                        celebrationSlot.innerHTML = `
-                            <div class="celebration-banner">
-                                <div class="trophy-icon">&#127942;</div>
-                                <div>
-                                    <strong style="color: #fbbf24; display: block; font-size: 17px;">New Personal Best Record Unlocked!</strong>
-                                    <span style="font-size: 14px; color: #fde68a;">You crushed your previous high score!</span>
+                    if (state.success) {
+                        summaryText.innerText = `Great job! Your tutor successfully guessed the word.`;
+                        summaryText.style.color = '#34d399';
+                        const isRecord = saveHighScore(earned);
+                        if (isRecord) {
+                            mainCardBox.classList.add('personal-best-card-effect');
+                            triggerParticleBurst();
+                            openHighScoreModal(earned);
+                            celebrationSlot.innerHTML = `
+                                <div class="celebration-banner">
+                                    <div class="trophy-icon">&#127942;</div>
+                                    <div>
+                                        <strong style="color: #fbbf24; display: block; font-size: 17px;">New Personal Best Record Unlocked!</strong>
+                                        <span style="font-size: 14px; color: #fde68a;">You crushed your previous high score!</span>
+                                    </div>
                                 </div>
-                            </div>
-                        `;
+                            `;
+                        } else {
+                            celebrationSlot.innerHTML = `
+                                <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
+                                    Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${getPersonalBest()} pts</span>
+                                </div>
+                            `;
+                        }
                     } else {
+                        summaryText.innerText = `Round ended without a correct guess or time ran out.`;
+                        summaryText.style.color = '#f43f5e';
                         celebrationSlot.innerHTML = `
                             <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
                                 Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${getPersonalBest()} pts</span>
                             </div>
                         `;
                     }
-                } else {
-                    summaryText.innerText = `Round ended without a correct guess or time ran out.`;
-                    summaryText.style.color = '#f43f5e';
-                    celebrationSlot.innerHTML = `
-                        <div style="font-size: 15px; color: #94a3b8; margin: 16px 0 20px 0; font-weight: 700;">
-                            Personal Best Record: <span style="color: #fbbf24; font-size: 18px;">${getPersonalBest()} pts</span>
-                        </div>
-                    `;
-                }
-                switchScreen('student-summary-screen');
+                    switchScreen('student-summary-screen');
 
-                setTimeout(() => {
-                    const totalMaxScale = 300;
-                    const baselinePct = Math.max(0, Math.min(100, ((state.baselineEarned || 0) / totalMaxScale) * 100));
-                    const bonusPct = Math.max(0, Math.min(100, ((state.bonusEarned || 0) / totalMaxScale) * 100));
-                    barSegmentBaseline.style.width = `${baselinePct}%`;
-                    barSegmentBonus.style.width = `${bonusPct}%`;
-                }, 150);
+                    setTimeout(() => {
+                        const totalMaxScale = 300;
+                        const baselinePct = Math.max(0, Math.min(100, ((state.baselineEarned || 0) / totalMaxScale) * 100));
+                        const bonusPct = Math.max(0, Math.min(100, ((state.bonusEarned || 0) / totalMaxScale) * 100));
+                        barSegmentBaseline.style.width = `${baselinePct}%`;
+                        barSegmentBonus.style.width = `${bonusPct}%`;
+                    }, 150);
+                }
             }
 
             if (state.status === 'playing' && gameScreen && gameScreen.classList.contains('active')) {
                 currentLivePoints = state.points;
             }
         }
-    }
-
-    function tutorApplyPenalty() {
-        socket.emit('tutorPenalty');
-    }
-    window.tutorApplyPenalty = tutorApplyPenalty;
-
-    function tutorEndRound(success) {
-        socket.emit('tutorEndRound', { success: success });
-    }
-    window.tutorEndRound = tutorEndRound;
-
-    renderRightSidebarStudentList();
-
-    function attemptUrlAutoLogin() {
-    const params = new URLSearchParams(window.location.search);
-    const studentIdParam = params.get('id');
-
-    if (!studentIdParam) return;
-
-    userRole = 'student';
-    let store = getStudentsStore();
-
-    // IF STUDENT IS NOT IN LOCAL STORAGE, RE-CREATE THEM FROM THE URL
-    if (!store[studentIdParam]) {
-        // Extract the original student name from the URL ID format: "Name_randomString"
-        const decodedRaw = decodeURIComponent(studentIdParam);
-        const nameParts = decodedRaw.split('_');
-        
-        // Use the extracted name, or fallback to 'Student' if parsing fails
-        const extractedName = nameParts.length > 1 ? nameParts.slice(0, -1).join('_') : decodedRaw;
-
-        // Auto-hydrate store so local storage now remembers this student
-        store[studentIdParam] = {
-            id: studentIdParam,
-            name: extractedName,
-            identifier: 'Link User',
-            level: 'A1',
-            avatar: getDiceBearUrl(extractedName)
-        };
-
-        // Save back to local storage and sync with backend socket
-        saveStudentsStore(store, true);
-    }
-
-    // Now proceed with normal auto-login
-    currentStudentId = studentIdParam;
-    currentStudentName = store[studentIdParam].name;
-    
-    let hasChosenBefore = localStorage.getItem('circumlocution_avatar_chosen_' + currentStudentName);
-    selectedAvatar = localStorage.getItem('circumlocution_avatar_' + currentStudentName) || store[studentIdParam].avatar || getDiceBearUrl(currentStudentName);
-    
-    document.getElementById('welcome-student-name').innerText = currentStudentName;
-    document.getElementById('lobby-avatar-display').src = selectedAvatar;
-    document.getElementById('header-avatar-display').src = selectedAvatar;
-    document.getElementById('current-player-display').innerText = currentStudentName;
-
-    if (!hasChosenBefore) {
-        updateDiceBearPreview();
-        switchScreen('student-avatar-screen');
-    } else {
-        switchScreen('student-direct-login');
-    }
-}
-
-    // Attempt auto-login immediately if cached locally...
-    attemptUrlAutoLogin();
-
-    // ...and attempt again after 1.5 seconds in case Socket.io is still connecting on initial load
-    setTimeout(attemptUrlAutoLogin, 1500);
+    }, 300);
 });
 
 document.getElementById('tutor-login-btn').addEventListener('click', () => {

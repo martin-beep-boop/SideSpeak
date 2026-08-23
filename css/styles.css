@@ -868,12 +868,13 @@ button[onclick="loadWordChoices()"]:hover {
             line-height: 1.1;
         }
         .game-logo-sub {
-            font-size: 18px;
-            font-weight: 700;
-            color: #818cf8;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
+    font-size: 18px;
+    font-weight: 700;
+    color: #818cf8;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-family: 'Fredoka', sans-serif; /* Add this line */
+}
 
         .avatar-hover-wrapper {
             position: relative;
