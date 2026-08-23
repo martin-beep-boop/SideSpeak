@@ -981,15 +981,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 150);
     }
 
-    function initTutorSession() {
-        supabase.from('game_states').select('*').eq('id', 'active_session').single().then(({ data }) => {
-            if (data) updateTutorDashboardUI(data);
-        });
+async function initTutorSession() {
+        const { data, error } = await supabase.from('game_states').select('*').eq('id', 'active_session').single();
+        if (data) {
+            updateTutorDashboardUI(data);
+        } else {
+            // Force create a default row if missing
+            await supabase.from('game_states').upsert({
+                id: 'active_session',
+                status: 'waiting',
+                points: 150,
+                time_left: 120,
+                baseline: 50
+            });
+        }
 
         supabase
             .channel('public:game_states')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'game_states', filter: 'id=eq.active_session' }, (payload) => {
-                if (payload.new) {
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'game_states' }, (payload) => {
+                if (payload.new && payload.new.id === 'active_session') {
                     updateTutorDashboardUI(payload.new);
                 }
             })
