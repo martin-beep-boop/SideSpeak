@@ -688,28 +688,37 @@ async function handleIncomingGameState(state) {
     }
 
     async function getPersonalBest() {
-        const store = await getHighScoreStore();
         const lookupKey = currentStudentId || currentStudentName;
+        if (!lookupKey) return 0;
+        
+        const store = await getHighScoreStore();
         return (store[lookupKey] && store[lookupKey].highestScore) ? store[lookupKey].highestScore : 0;
     }
 
     async function saveHighScore(score) {
-        const store = await getHighScoreStore();
         const lookupKey = currentStudentId || currentStudentName;
-        if (!store[lookupKey]) {
-            store[lookupKey] = { highestScore: 0 };
+        if (!lookupKey) return false;
+        
+        const store = await getHighScoreStore();
+        
+        let currentHighest = 0;
+        if (store[lookupKey] && typeof store[lookupKey].highestScore === 'number') {
+            currentHighest = store[lookupKey].highestScore;
         }
         
         let isNewRecord = false;
-        if (score > store[lookupKey].highestScore) {
-            store[lookupKey].highestScore = score;
+        if (score > currentHighest) {
             isNewRecord = true;
             
             try {
-                await supabase.from('highscores').upsert({
+                const { error } = await supabase.from('highscores').upsert({
                     student_key: lookupKey,
                     highest_score: score
-                });
+                }, { onConflict: 'student_key' });
+                
+                if (error) {
+                    console.error('Supabase highscore upsert error:', error);
+                }
             } catch (err) {
                 console.error('Error saving high score to Supabase:', err);
             }
