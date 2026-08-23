@@ -933,63 +933,68 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initTutorSession() {
-    setInterval(() => {
-        if (userRole !== 'tutor') return;
-        const stateJSON = localStorage.getItem('circumlocution_gamestate');
-        const state = stateJSON ? JSON.parse(stateJSON) : {};
+    // Initial fetch to populate UI immediately
+    supabase.from('game_states').select('*').eq('id', 'active_session').single().then(({ data }) => {
+        if (data) updateTutorDashboardUI(data);
+    });
+
+    // Listen to live changes via Supabase Realtime WebSockets
+    supabase
+        .channel('public:game_states')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'game_states', filter: 'id=eq.active_session' }, (payload) => {
+            if (payload.new) {
+                updateTutorDashboardUI(payload.new);
+            }
+        })
+        .subscribe();
+}
+
+function updateTutorDashboardUI(state) {
+    if (userRole !== 'tutor') return;
+
+    const statusTextEl = document.getElementById('tutor-status-text');
+    const activeControlsEl = document.getElementById('tutor-active-game-controls');
+    const summaryControlsEl = document.getElementById('tutor-summary-controls');
+    const recordBanner = document.getElementById('tutor-record-banner');
+
+    if (!statusTextEl) return;
+
+    if (state.status === 'playing') {
+        statusTextEl.style.display = 'none';
+        activeControlsEl.style.display = 'block';
+        summaryControlsEl.style.display = 'none';
         
-        const statusTextEl = document.getElementById('tutor-status-text');
-        const activeControlsEl = document.getElementById('tutor-active-game-controls');
-        const summaryControlsEl = document.getElementById('tutor-summary-controls');
-        const recordBanner = document.getElementById('tutor-record-banner');
+        document.getElementById('tutor-score-display').innerText = `Current Score Value: ${state.points} (Time: ${state.time_left}s)`;
+        
+        currentLivePoints = state.points;
+        currentBaseline = state.baseline || 50;
+        currentWord = state.word;
+        currentTier = state.tier;
+        currentStars = state.stars || '';
 
-        if (!statusTextEl) return;
-
-        if (state.status === 'playing') {
-            statusTextEl.style.display = 'none';
-            activeControlsEl.style.display = 'block';
-            summaryControlsEl.style.display = 'none';
-            
-            document.getElementById('tutor-score-display').innerText = `Current Score Value: ${state.points} (Time: ${state.timeLeft}s)`;
-            
-            currentLivePoints = state.points;
-            currentBaseline = state.baseline || 50;
-            currentWord = state.word;
-            currentTier = state.tier;
-            currentStars = state.stars || '';
-
-            const badgeDiv = document.getElementById('tutor-badge');
-            badgeDiv.innerHTML = `<span class="badge badge-${(state.tier || 'very easy').toLowerCase().replace(/\s+/g, '-')}">${currentStars} ${state.tier || 'Very Easy'} Level</span>`;
-        } else if (state.status === 'selecting') {
-            statusTextEl.style.display = 'block';
-            
-            if (state.word) {
-                statusTextEl.innerHTML = `Student selected a word: <strong style="color: #f8fafc; font-size: 20px;">${state.word}</strong><br><small style="color: #94a3b8;">Get ready! Round starting...</small>`;
-            } else {
-                statusTextEl.innerText = 'Student is choosing a word...';
-            }
-            
-            activeControlsEl.style.display = 'none';
-            summaryControlsEl.style.display = 'none';
-        } else if (state.status === 'summary') {
-            statusTextEl.style.display = 'block';
-            statusTextEl.innerText = state.success ? `Round Won! Earned ${state.earned} pts` : `Round Ended / Passed`;
-            
-            activeControlsEl.style.display = 'none';
-            summaryControlsEl.style.display = 'block';
-            
-            if (state.isNewRecord) {
-                recordBanner.style.display = 'block';
-            } else {
-                recordBanner.style.display = 'none';
-            }
+        const badgeDiv = document.getElementById('tutor-badge');
+        badgeDiv.innerHTML = `<span class="badge badge-${(state.tier || 'very easy').toLowerCase().replace(/\s+/g, '-')}">${currentStars} ${state.tier || 'Very Easy'} Level</span>`;
+    } else if (state.status === 'selecting') {
+        statusTextEl.style.display = 'block';
+        if (state.word) {
+            statusTextEl.innerHTML = `Student selected a word: <strong style="color: #f8fafc; font-size: 20px;">${state.word}</strong><br><small style="color: #94a3b8;">Get ready! Round starting...</small>`;
         } else {
-            statusTextEl.style.display = 'block';
-            statusTextEl.innerText = 'No student has arrived yet.';
-            activeControlsEl.style.display = 'none';
-            summaryControlsEl.style.display = 'none';
+            statusTextEl.innerText = 'Student is choosing a word...';
         }
-    }, 500);
+        activeControlsEl.style.display = 'none';
+        summaryControlsEl.style.display = 'none';
+    } else if (state.status === 'summary') {
+        statusTextEl.style.display = 'block';
+        statusTextEl.innerText = state.success ? `Round Won! Earned ${state.earned} pts` : `Round Ended / Passed`;
+        activeControlsEl.style.display = 'none';
+        summaryControlsEl.style.display = 'block';
+        recordBanner.style.display = state.is_new_record ? 'block' : 'none';
+    } else {
+        statusTextEl.style.display = 'block';
+        statusTextEl.innerText = 'No student has arrived yet.';
+        activeControlsEl.style.display = 'none';
+        summaryControlsEl.style.display = 'none';
+    }
 }
 
     function tutorApplyPenalty() {
@@ -1235,4 +1240,28 @@ function triggerModalParticleBurst() {
         box.appendChild(p);
     }
     setTimeout(() => { box.innerHTML = ''; }, 1400);
+}
+
+async function syncGameStateToSupabase(stateObj) {
+    try {
+        await supabase.from('game_states').upsert({
+            id: 'active_session',
+            status: stateObj.status,
+            word: stateObj.word || null,
+            tier: stateObj.tier || null,
+            stars: stateObj.stars || null,
+            baseline: stateObj.baseline || 50,
+            bonus_max: stateObj.bonusMax || 100,
+            points: stateObj.points || 150,
+            time_left: stateObj.timeLeft || 120,
+            success: stateObj.success || false,
+            earned: stateObj.earned || 0,
+            baseline_earned: stateObj.baselineEarned || 0,
+            bonus_earned: stateObj.bonusEarned || 0,
+            is_new_record: stateObj.isNewRecord || false,
+            updated_at: new Date()
+        });
+    } catch (err) {
+        console.error('Error syncing game state:', err);
+    }
 }
