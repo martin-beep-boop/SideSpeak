@@ -927,64 +927,66 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function initTutorSession() {
-        setInterval(() => {
-            if (userRole !== 'tutor') return;
-            const stateJSON = localStorage.getItem('circumlocution_gamestate');
-            const state = stateJSON ? JSON.parse(stateJSON) : {};
+    renderAllStudentsLists(); // Load once upon session start
+
+    setInterval(() => {
+        if (userRole !== 'tutor') return;
+        const stateJSON = localStorage.getItem('circumlocution_gamestate');
+        const state = stateJSON ? JSON.parse(stateJSON) : {};
+        
+        const statusTextEl = document.getElementById('tutor-status-text');
+        const activeControlsEl = document.getElementById('tutor-active-game-controls');
+        const summaryControlsEl = document.getElementById('tutor-summary-controls');
+        const recordBanner = document.getElementById('tutor-record-banner');
+
+        if (!statusTextEl) return;
+
+        if (state.status === 'playing') {
+            statusTextEl.style.display = 'none';
+            activeControlsEl.style.display = 'block';
+            summaryControlsEl.style.display = 'none';
             
-            const statusTextEl = document.getElementById('tutor-status-text');
-            const activeControlsEl = document.getElementById('tutor-active-game-controls');
-            const summaryControlsEl = document.getElementById('tutor-summary-controls');
-            const recordBanner = document.getElementById('tutor-record-banner');
+            document.getElementById('tutor-score-display').innerText = `Current Score Value: ${state.points} (Time: ${state.timeLeft}s)`;
+            
+            currentLivePoints = state.points;
+            currentBaseline = state.baseline || 50;
+            currentWord = state.word;
+            currentTier = state.tier;
+            currentStars = state.stars || '';
 
-            if (!statusTextEl) return;
-
-            if (state.status === 'playing') {
-                statusTextEl.style.display = 'none';
-                activeControlsEl.style.display = 'block';
-                summaryControlsEl.style.display = 'none';
-                
-                document.getElementById('tutor-score-display').innerText = `Current Score Value: ${state.points} (Time: ${state.timeLeft}s)`;
-                
-                currentLivePoints = state.points;
-                currentBaseline = state.baseline || 50;
-                currentWord = state.word;
-                currentTier = state.tier;
-                currentStars = state.stars || '';
-
-                const badgeDiv = document.getElementById('tutor-badge');
-                badgeDiv.innerHTML = `<span class="badge badge-${(state.tier || 'very easy').toLowerCase().replace(/\s+/g, '-')}">${currentStars} ${state.tier || 'Very Easy'} Level</span>`;
-            } else if (state.status === 'selecting') {
-                statusTextEl.style.display = 'block';
-                
-                if (state.word) {
-                    statusTextEl.innerHTML = `Student selected a word: <strong style="color: #f8fafc; font-size: 20px;">${state.word}</strong><br><small style="color: #94a3b8;">Get ready! Round starting...</small>`;
-                } else {
-                    statusTextEl.innerText = 'Student is choosing a word...';
-                }
-                
-                activeControlsEl.style.display = 'none';
-                summaryControlsEl.style.display = 'none';
-            } else if (state.status === 'summary') {
-                statusTextEl.style.display = 'block';
-                statusTextEl.innerText = state.success ? `Round Won! Earned ${state.earned} pts` : `Round Ended / Passed`;
-                
-                activeControlsEl.style.display = 'none';
-                summaryControlsEl.style.display = 'block';
-                
-                if (state.isNewRecord) {
-                    recordBanner.style.display = 'block';
-                } else {
-                    recordBanner.style.display = 'none';
-                }
+            const badgeDiv = document.getElementById('tutor-badge');
+            badgeDiv.innerHTML = `<span class="badge badge-${(state.tier || 'very easy').toLowerCase().replace(/\s+/g, '-')}">${currentStars} ${state.tier || 'Very Easy'} Level</span>`;
+        } else if (state.status === 'selecting') {
+            statusTextEl.style.display = 'block';
+            
+            if (state.word) {
+                statusTextEl.innerHTML = `Student selected a word: <strong style="color: #f8fafc; font-size: 20px;">${state.word}</strong><br><small style="color: #94a3b8;">Get ready! Round starting...</small>`;
             } else {
-                statusTextEl.style.display = 'block';
-                statusTextEl.innerText = 'No student has arrived yet.';
-                activeControlsEl.style.display = 'none';
-                summaryControlsEl.style.display = 'none';
+                statusTextEl.innerText = 'Student is choosing a word...';
             }
-        }, 500);
-    }
+            
+            activeControlsEl.style.display = 'none';
+            summaryControlsEl.style.display = 'none';
+        } else if (state.status === 'summary') {
+            statusTextEl.style.display = 'block';
+            statusTextEl.innerText = state.success ? `Round Won! Earned ${state.earned} pts` : `Round Ended / Passed`;
+            
+            activeControlsEl.style.display = 'none';
+            summaryControlsEl.style.display = 'block';
+            
+            if (state.isNewRecord) {
+                recordBanner.style.display = 'block';
+            } else {
+                recordBanner.style.display = 'none';
+            }
+        } else {
+            statusTextEl.style.display = 'block';
+            statusTextEl.innerText = 'No student has arrived yet.';
+            activeControlsEl.style.display = 'none';
+            summaryControlsEl.style.display = 'none';
+        }
+    }, 500);
+}
 
     function tutorApplyPenalty() {
         let state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
@@ -1063,8 +1065,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     setInterval(() => {
-        renderRightSidebarStudentList();
-
         if (userRole === 'student') {
             const state = JSON.parse(localStorage.getItem('circumlocution_gamestate') || '{}');
             const gameScreen = document.getElementById('student-game-screen');
