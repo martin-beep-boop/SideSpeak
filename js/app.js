@@ -696,15 +696,24 @@ async function handleIncomingGameState(state) {
     }
 
     async function saveHighScore(score) {
-        const lookupKey = currentStudentId || currentStudentName;
-        if (!lookupKey) return false;
+        let lookupKey = currentStudentId || currentStudentName;
+        
+        // If still missing, check if we can resolve it from the student store matching the name
+        if (!lookupKey && currentStudentName) {
+            const store = await getStudentsStore();
+            const found = Object.values(store).find(s => s.name === currentStudentName);
+            if (found) {
+                lookupKey = found.id;
+            }
+        }
+
+        if (!lookupKey) {
+            console.error('Cannot save high score: No valid student ID or name found.');
+            return false;
+        }
         
         const store = await getHighScoreStore();
-        
-        let currentHighest = 0;
-        if (store[lookupKey] && typeof store[lookupKey].highestScore === 'number') {
-            currentHighest = store[lookupKey].highestScore;
-        }
+        let currentHighest = (store[lookupKey] && store[lookupKey].highestScore) || 0;
         
         let isNewRecord = false;
         if (score > currentHighest) {
